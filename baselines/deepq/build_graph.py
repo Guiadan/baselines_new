@@ -180,7 +180,7 @@ def build_act(make_obs_ph, q_func, num_actions, scope="deepq", reuse=None):
 
         eps = tf.get_variable("eps", (), initializer=tf.constant_initializer(0))
 
-        q_values = q_func(observations_ph.get(), num_actions, scope="q_func")
+        q_values, features = q_func(observations_ph.get(), num_actions, scope="q_func")
         deterministic_actions = tf.argmax(q_values, axis=1)
 
         batch_size = tf.shape(observations_ph.get())[0]
@@ -313,9 +313,57 @@ def build_act_with_param_noise(make_obs_ph, q_func, num_actions, scope="deepq", 
             return _act(ob, stochastic, update_eps, reset, update_param_noise_threshold, update_param_noise_scale)
         return act
 
+def build_act_with_thompson_sampling(make_obs_ph, q_func, num_actions, scope="deepq", reuse=None):
+    """Creates the act function:
+
+    Parameters
+    ----------
+    make_obs_ph: str -> tf.placeholder or TfInput
+        a function that take a name and creates a placeholder of input with that name
+    q_func: (tf.Variable, int, str, bool) -> tf.Variable
+        the model that takes the following inputs:
+            observation_in: object
+                the output of observation placeholder
+            num_actions: int
+                number of actions
+            scope: str
+            reuse: bool
+                should be passed to outer variable scope
+        and returns a tensor of shape (batch_size, num_actions) with values of every action.
+    num_actions: int
+        number of actions.
+    scope: str or VariableScope
+        optional scope for variable_scope.
+    reuse: bool or None
+        whether or not the variables should be reused. To be able to reuse the scope must be given.
+
+    Returns
+    -------
+    act: (tf.Variable, bool, float) -> tf.Variable
+        function to select and action given observation.
+`       See the top of the file for details.
+    """
+    with tf.variable_scope(scope, reuse=reuse):
+        observations_ph = make_obs_ph("observation")
+
+        _, phi_x = q_func(observations_ph.get(), num_actions, scope='q_func')
+
+        feat_dim = phi_x.shape[1].value
+        w_ph = tf.placeholder(tf.float32, [None] + [num_actions, feat_dim], name="w")
+
+        phi_x = tf.expand_dims(phi_x, axis=-1)
+        q_values = tf.matmul(w_ph, phi_x)
+
+        sampled_actions = tf.argmax(q_values, axis=1)
+
+        sampled_actions = tf.squeeze(sampled_actions)
+        act = U.function(inputs=[observations_ph, w_ph],
+                         outputs=sampled_actions)
+        return act
+
 
 def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=None, gamma=1.0,
-    double_q=True, scope="deepq", reuse=None, param_noise=False, param_noise_filter_func=None):
+    double_q=False, scope="deepq", reuse=None, param_noise=False, param_noise_filter_func=None, thompson=True):
     """Creates the train function:
 
     Parameters
@@ -372,6 +420,8 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
     if param_noise:
         act_f = build_act_with_param_noise(make_obs_ph, q_func, num_actions, scope=scope, reuse=reuse,
             param_noise_filter_func=param_noise_filter_func)
+    elif thompson:
+        act_f = build_act_with_thompson_sampling(make_obs_ph, q_func, num_actions, scope=scope, reuse=reuse)
     else:
         act_f = build_act(make_obs_ph, q_func, num_actions, scope=scope, reuse=reuse)
 
@@ -385,11 +435,11 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
         importance_weights_ph = tf.placeholder(tf.float32, [None], name="weight")
 
         # q network evaluation
-        q_t = q_func(obs_t_input.get(), num_actions, scope="q_func", reuse=True)  # reuse parameters from act
+        q_t, phi_xt = q_func(obs_t_input.get(), num_actions, scope="q_func", reuse=True)  # reuse parameters from act
         q_func_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=tf.get_variable_scope().name + "/q_func")
 
         # target q network evalution
-        q_tp1 = q_func(obs_tp1_input.get(), num_actions, scope="target_q_func")
+        q_tp1, phi_target_xtp1 = q_func(obs_tp1_input.get(), num_actions, scope="target_q_func")
         target_q_func_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=tf.get_variable_scope().name + "/target_q_func")
 
         # q scores for actions which we know were selected in the given state.
@@ -397,7 +447,7 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
 
         # compute estimate of best possible value starting from state at t + 1
         if double_q:
-            q_tp1_using_online_net = q_func(obs_tp1_input.get(), num_actions, scope="q_func", reuse=True)
+            q_tp1_using_online_net, _ = q_func(obs_tp1_input.get(), num_actions, scope="q_func", reuse=True)
             q_tp1_best_using_online_net = tf.argmax(q_tp1_using_online_net, 1)
             q_tp1_best = tf.reduce_sum(q_tp1 * tf.one_hot(q_tp1_best_using_online_net, num_actions), 1)
         else:
@@ -446,4 +496,54 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
 
         q_values = U.function([obs_t_input], q_t)
 
-        return act_f, train, update_target, {'q_values': q_values}
+        if thompson:
+            # Bayes Regression additions
+            last_layer_weights = q_func_vars[-2] #target_q_func_vars[-2]
+            phiphiTop = tf.matmul(tf.transpose(phi_xt), phi_xt)
+            phiYop = tf.squeeze(tf.matmul(tf.expand_dims(q_t_selected_target,0), phi_xt))
+            feat_dim = phi_xt.shape[1].value
+
+            feat = U.function([obs_t_input], phi_xt)
+            feat_target = U.function([obs_tp1_input], phi_target_xtp1)
+
+            phiphiT = tf.placeholder(tf.float32, [None] + [feat_dim, feat_dim], name="phiphiT")
+            pseudo_count = tf.reduce_sum(tf.matmul(tf.matmul(tf.expand_dims(phi_target_xtp1,axis=1), phiphiT),tf.expand_dims(phi_target_xtp1, axis=-1)),axis=[1,2])
+            outer_product_op = tf.matmul(tf.expand_dims(phi_xt,axis=-1), tf.expand_dims(phi_xt,axis=1))
+
+            sdp_ops = U.function(
+                inputs=[
+                    obs_t_input,
+                    obs_tp1_input,
+                    phiphiT
+                ],
+                outputs=[
+                    pseudo_count,
+                    outer_product_op
+                ]
+            )
+
+            # Create callable functions
+            blr_ops = U.function(
+                inputs=[
+                    obs_t_input,
+                    act_t_ph,
+                    rew_t_ph,
+                    obs_tp1_input,
+                    done_mask_ph,
+                    importance_weights_ph
+                ],
+                outputs=[phiphiTop,phiYop]
+            )
+
+            blr_additions = {
+                'feat_dim': feat_dim,
+                'feature_extractor': feat,
+                'target_feature_extractor': feat_target,
+                'blr_ops': blr_ops,
+                'last_layer_weights': last_layer_weights,
+                'sdp_ops': sdp_ops
+            }
+        else:
+            blr_additions = None
+
+        return act_f, train, update_target, {'q_values': q_values}, blr_additions
