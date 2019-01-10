@@ -524,9 +524,9 @@ def learn(env,
                                  initial_p=1.0,
                                  final_p=exploration_final_eps)
 
+    num_actions = env.action_space.n
     if thompson:
         # Create parameters for Bayesian Regression
-        num_actions = env.action_space.n
         feat_dim = blr_additions['feat_dim']
         num_models = 5
         w_sample = np.random.normal(loc=0, scale=0.01, size=(num_actions, num_models, feat_dim))
@@ -641,7 +641,7 @@ def learn(env,
                     last_layer_weights_decaying_average *= 0.99
                     last_layer_weights_decaying_average += sess.run(blr_additions['last_layer_weights'])
 
-            if t > learning_starts and t % (blr_params.update_w*target_network_update_freq) == 0:
+            if t > learning_starts and t % (blr_params.update_w*target_network_update_freq) == 0 and thompson:
                 ADQN_prior = False # average dqn
                 if ADQN_prior:
                     llw = last_layer_weights_decaying_average
