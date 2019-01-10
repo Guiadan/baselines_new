@@ -128,6 +128,12 @@ def mujoco_arg_parser():
     print('Obsolete - use common_arg_parser instead')
     return common_arg_parser()
 
+def str2bool(str):
+    if str == "False":
+        return False
+    if str == "True":
+        return True
+
 def common_arg_parser():
     """
     Create an argparse.ArgumentParser for run_mujoco.py.
@@ -146,6 +152,8 @@ def common_arg_parser():
     parser.add_argument('--save_video_length', help='Length of recorded video. Default: 200', default=200, type=int)
     parser.add_argument('--play', default=False, action='store_true')
     parser.add_argument('--exp_name', help='experiment name', type=str, default='dqn')
+    parser.add_argument('--thompson', default=False, type=str2bool)
+    parser.add_argument('--prior', help='prior method (no prior, decay, sdp, single sdp, last layer)', type=str, default='no prior')
     return parser
 
 def robotics_arg_parser():

@@ -83,7 +83,7 @@ def information_transfer_new(phiphiT, dqn_feat, target_dqn_feat, replay_buffer, 
             # Form objective.
             obj = cvx.Minimize(sum([(cvx.trace(X * phi[a][i]) - np.squeeze(d[a][i])) ** 2 for i in range(len(d[a]))]))
             prob = cvx.Problem(obj)
-            prob.solve()
+            prob.solve(solver=cvx.SUPER_SCS)
             if X.value is None:
                 print("failed - cvxpy couldn't solve sdp")
                 precisions_return.append(np.linalg.inv(prior))
@@ -227,24 +227,24 @@ def BayesRegression(phiphiT, phiY, replay_buffer, dqn_feat, target_dqn_feat, num
         print("no prior")
         phiY *= (1-blr_param.alpha)*0
         phiphiT *= (1-blr_param.alpha)*0
-    elif prior == "simple":
+    elif prior == "decay":
         print("simple prior")
         phiY *= (1-blr_param.alpha)
         phiphiT *= (1-blr_param.alpha)
+    elif prior == "last layer":
+        print("last layer weights only prior")
     elif prior == "sdp":
-        single = True
-        first_moment_only = False
         print("SDP prior")
-        if single:
-            phiphiT0 = 1/blr_param.sigma * np.eye(feat_dim)
-        else:
-            phiphiT0  = None
+        phiphiT0  = None
         if np.any(phiphiT != np.zeros_like(phiphiT)):
-            if single:
-                print('using 300 samples')
-                phiphiT0, _ = information_transfer_single(phiphiT/blr_param.sigma_n, dqn_feat, target_dqn_feat, replay_buffer, 300      , num_actions, feat_dim, sdp_ops)
-            else:
-                phiphiT0, _ = information_transfer_new(phiphiT/blr_param.sigma_n, dqn_feat, target_dqn_feat, replay_buffer, 128*num_actions      , num_actions, feat_dim, sdp_ops)
+            phiphiT0, _ = information_transfer_new(phiphiT/blr_param.sigma_n, dqn_feat, target_dqn_feat, replay_buffer, 300*num_actions      , num_actions, feat_dim, sdp_ops)
+        phiY *= (1-blr_param.alpha)*0
+        phiphiT *= (1-blr_param.alpha)*0
+    elif prior == "single sdp":
+        print("SDP prior")
+        phiphiT0 = 1/blr_param.sigma * np.eye(feat_dim)
+        if np.any(phiphiT != np.zeros_like(phiphiT)):
+            phiphiT0, _ = information_transfer_single(phiphiT/blr_param.sigma_n, dqn_feat, target_dqn_feat, replay_buffer, 300      , num_actions, feat_dim, sdp_ops)
         phiY *= (1-blr_param.alpha)*0
         phiphiT *= (1-blr_param.alpha)*0
 
@@ -274,28 +274,28 @@ def BayesRegression(phiphiT, phiY, replay_buffer, dqn_feat, target_dqn_feat, num
     print(n, np.sum(n))
     for i in range(num_actions):
         if prior == "sdp":# and phiphiT0 is not None:
-            if single:
-                # shared phiphiT0
-                if i == 0:
-                    print("shared second moment")
-                inv = np.linalg.inv(phiphiT[i]/blr_param.sigma_n + phiphiT0)
-                w_mu[i] = np.array(np.dot(inv,(phiY[i]/blr_param.sigma_n + np.dot(phiphiT0, last_layer_weights[:,i]))))
-            elif first_moment_only:
-                # first moment only
-                if i == 0:
-                    print("first moment only")
+            if i == 0:
+                print("regular sdp")
+            if phiphiT0 is None:
                 inv = np.linalg.inv(phiphiT[i]/blr_param.sigma_n + 1/blr_param.sigma * np.eye(feat_dim))
-                w_mu[i] = np.array(np.dot(inv,(phiY[i]/blr_param.sigma_n + (1/blr_param.sigma)*last_layer_weights[:,i])))
+                w_mu[i] = np.array(np.dot(inv,phiY[i]))/blr_param.sigma_n
             else:
-                if i == 0:
-                    print("regular sdp")
-                if phiphiT0 is None:
-                    inv = np.linalg.inv(phiphiT[i]/blr_param.sigma_n + 1/blr_param.sigma * np.eye(feat_dim))
-                    w_mu[i] = np.array(np.dot(inv,phiY[i]))/blr_param.sigma_n
-                else:
-                    inv = np.linalg.inv(phiphiT[i]/blr_param.sigma_n + phiphiT0[i])
-                    w_mu[i] = np.array(np.dot(inv,(phiY[i]/blr_param.sigma_n + np.dot(phiphiT0[i], last_layer_weights[:,i]))))
+                inv = np.linalg.inv(phiphiT[i]/blr_param.sigma_n + phiphiT0[i])
+                w_mu[i] = np.array(np.dot(inv,(phiY[i]/blr_param.sigma_n + np.dot(phiphiT0[i], last_layer_weights[:,i]))))
+        elif prior == "single sdp":
+            # shared phiphiT0
+            if i == 0:
+                print("single sdp")
+            inv = np.linalg.inv(phiphiT[i]/blr_param.sigma_n + phiphiT0)
+            w_mu[i] = np.array(np.dot(inv,(phiY[i]/blr_param.sigma_n + np.dot(phiphiT0, last_layer_weights[:,i]))))
+        elif prior == "last layer":
+            if i == 0:
+                print("last layer weights only prior")
+            inv = np.linalg.inv(phiphiT[i]/blr_param.sigma_n + 1/blr_param.sigma * np.eye(feat_dim))
+            w_mu[i] = np.array(np.dot(inv,(phiY[i]/blr_param.sigma_n + (1/blr_param.sigma)*last_layer_weights[:,i])))
         else:
+            if i == 0:
+                print("no prior")
             inv = np.linalg.inv(phiphiT[i]/blr_param.sigma_n + 1/blr_param.sigma * np.eye(feat_dim))
             w_mu[i] = np.array(np.dot(inv,phiY[i]))/blr_param.sigma_n
         w_cov[i] = blr_param.sigma*inv
@@ -403,6 +403,7 @@ def learn(env,
           callback=None,
           load_path=None,
           thompson=True,
+          prior="no prior",
           **network_kwargs
             ):
     """Train a deepq model.
@@ -634,26 +635,27 @@ def learn(env,
                     new_priorities = np.abs(td_errors) + prioritized_replay_eps
                     replay_buffer.update_priorities(batch_idxes, new_priorities)
 
-            if t > learning_starts and t % target_network_update_freq == 0:
-                if last_layer_weights_decaying_average is None:
-                    last_layer_weights_decaying_average = sess.run(blr_additions['last_layer_weights'])
-                else:
-                    last_layer_weights_decaying_average *= 0.99
-                    last_layer_weights_decaying_average += sess.run(blr_additions['last_layer_weights'])
+            if thompson:
+                if t > learning_starts and t % target_network_update_freq == 0:
+                    if last_layer_weights_decaying_average is None:
+                        last_layer_weights_decaying_average = sess.run(blr_additions['last_layer_weights'])
+                    else:
+                        last_layer_weights_decaying_average *= 0.99
+                        last_layer_weights_decaying_average += sess.run(blr_additions['last_layer_weights'])
 
-            if t > learning_starts and t % (blr_params.update_w*target_network_update_freq) == 0 and thompson:
-                ADQN_prior = False # average dqn
-                if ADQN_prior:
-                    llw = last_layer_weights_decaying_average
-                else:
-                    llw = sess.run(blr_additions['last_layer_weights'])
-                phiphiT, phiY, w_mu, w_cov = BayesRegression(phiphiT,phiY,replay_buffer,
-                                                             blr_additions['feature_extractor'],
-                                                             blr_additions['target_feature_extractor'], num_actions,
-                                                             blr_params,w_mu, w_cov,
-                                                             llw,
-                                                             prior="sdp", blr_ops=blr_additions['blr_ops'],
-                                                             sdp_ops=blr_additions['sdp_ops'])
+                if t > learning_starts and t % (blr_params.update_w*target_network_update_freq) == 0 and thompson:
+                    ADQN_prior = False # average dqn
+                    if ADQN_prior:
+                        llw = last_layer_weights_decaying_average
+                    else:
+                        llw = sess.run(blr_additions['last_layer_weights'])
+                    phiphiT, phiY, w_mu, w_cov = BayesRegression(phiphiT,phiY,replay_buffer,
+                                                                 blr_additions['feature_extractor'],
+                                                                 blr_additions['target_feature_extractor'], num_actions,
+                                                                 blr_params,w_mu, w_cov,
+                                                                 llw,
+                                                                 prior=prior, blr_ops=blr_additions['blr_ops'],
+                                                                 sdp_ops=blr_additions['sdp_ops'])
 
             if t > learning_starts and t % target_network_update_freq == 0:
                 # Update target network periodically.
