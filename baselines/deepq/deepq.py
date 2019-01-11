@@ -530,8 +530,8 @@ def learn(env,
     if thompson:
         # Create parameters for Bayesian Regression
         feat_dim = blr_additions['feat_dim']
-        num_models = num_actions
-        print("num models (actions) is: {}".format(num_models))
+        num_models = 10
+        print("num models is: {}".format(num_models))
         w_sample = np.random.normal(loc=0, scale=0.01, size=(num_actions, num_models, feat_dim))
         w_mu = np.zeros((num_actions, feat_dim))
         w_cov = np.zeros((num_actions, feat_dim,feat_dim))
