@@ -530,7 +530,8 @@ def learn(env,
     if thompson:
         # Create parameters for Bayesian Regression
         feat_dim = blr_additions['feat_dim']
-        num_models = 5
+        num_models = num_actions
+        print("num models (actions) is: {}".format(num_models))
         w_sample = np.random.normal(loc=0, scale=0.01, size=(num_actions, num_models, feat_dim))
         w_mu = np.zeros((num_actions, feat_dim))
         w_cov = np.zeros((num_actions, feat_dim,feat_dim))
@@ -591,9 +592,7 @@ def learn(env,
 
             if thompson:
                 if t > 0 and t % blr_params.sample_w == 0:
-                    # print("sampling w")
-                    # print("w norms")
-                    # print(w_norms)
+                    # sampling num_models samples of w
                     actions_hist = [0. for _ in range(num_actions)]
                     for i in range(num_actions):
                         for j in range(num_models):
@@ -601,6 +600,7 @@ def learn(env,
                     # w_norms = [np.linalg.norm(w_sample[i]) for i in range(num_actions)]
 
             if thompson:
+                # for each action sample one of the num_models samples of w
                 model_idx = np.random.randint(0, num_models, size=num_actions)
                 cur_w = np.zeros((num_actions, feat_dim))
                 for i in range(num_actions):
@@ -645,10 +645,12 @@ def learn(env,
                         last_layer_weights_decaying_average += sess.run(blr_additions['last_layer_weights'])
 
                 if t > learning_starts and t % (blr_params.update_w*target_network_update_freq) == 0 and thompson:
-                    ADQN_prior = False # average dqn
+                    ADQN_prior = True # average dqn
                     if ADQN_prior:
+                        print("last layer weights decaying average")
                         llw = last_layer_weights_decaying_average
                     else:
+                        print("last layer weights regular")
                         llw = sess.run(blr_additions['last_layer_weights'])
                     phiphiT, phiY, w_mu, w_cov = BayesRegression(phiphiT,phiY,replay_buffer,
                                                                  blr_additions['feature_extractor'],
