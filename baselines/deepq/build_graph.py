@@ -346,7 +346,8 @@ def build_act_with_thompson_sampling(make_obs_ph, q_func, num_actions, scope="de
     with tf.variable_scope(scope, reuse=reuse):
         observations_ph = make_obs_ph("observation")
 
-        _, phi_x = q_func(observations_ph.get(), num_actions, scope='q_func')
+        _, phi_x = q_func(observations_ph.get(), num_actions, scope='old_q_func')
+        print('actor is old q func')
 
         feat_dim = phi_x.shape[1].value
         w_ph = tf.placeholder(tf.float32, [None] + [num_actions, feat_dim], name="w")
@@ -435,7 +436,7 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
         importance_weights_ph = tf.placeholder(tf.float32, [None], name="weight")
 
         # q network evaluation
-        q_t, phi_xt = q_func(obs_t_input.get(), num_actions, scope="q_func", reuse=True)  # reuse parameters from act
+        q_t, phi_xt = q_func(obs_t_input.get(), num_actions, scope="q_func")#, reuse=True)  # reuse parameters from act
         q_func_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=tf.get_variable_scope().name + "/q_func")
 
         # target q network evalution
@@ -513,7 +514,7 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
             feat_target = U.function([obs_tp1_input], phi_target_xtp1)
 
             # old q network evalution
-            q_t_old, phi_old = q_func(obs_t_input.get(), num_actions, scope="old_q_func")
+            q_t_old, phi_old = q_func(obs_t_input.get(), num_actions, scope="old_q_func", reuse=True)
 
             phiphiT = tf.placeholder(tf.float32, [None] + [feat_dim, feat_dim], name="phiphiT")
             pseudo_count = tf.reduce_sum(tf.matmul(tf.matmul(tf.expand_dims(phi_old,axis=1), phiphiT),tf.expand_dims(phi_old, axis=-1)),axis=[1,2])
