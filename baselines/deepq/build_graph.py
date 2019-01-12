@@ -442,6 +442,7 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
         q_tp1, phi_target_xtp1 = q_func(obs_tp1_input.get(), num_actions, scope="target_q_func")
         target_q_func_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=tf.get_variable_scope().name + "/target_q_func")
 
+
         # q scores for actions which we know were selected in the given state.
         q_t_selected = tf.reduce_sum(q_t * tf.one_hot(act_t_ph, num_actions), 1)
 
@@ -481,6 +482,9 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
             update_target_expr.append(var_target.assign(var))
         update_target_expr = tf.group(*update_target_expr)
 
+
+
+
         # Create callable functions
         train = U.function(
             inputs=[
@@ -508,8 +512,11 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
             feat = U.function([obs_t_input], phi_xt)
             feat_target = U.function([obs_tp1_input], phi_target_xtp1)
 
+            # old q network evalution
+            q_t_old, phi_old = q_func(obs_t_input.get(), num_actions, scope="old_q_func")
+
             phiphiT = tf.placeholder(tf.float32, [None] + [feat_dim, feat_dim], name="phiphiT")
-            pseudo_count = tf.reduce_sum(tf.matmul(tf.matmul(tf.expand_dims(phi_target_xtp1,axis=1), phiphiT),tf.expand_dims(phi_target_xtp1, axis=-1)),axis=[1,2])
+            pseudo_count = tf.reduce_sum(tf.matmul(tf.matmul(tf.expand_dims(phi_old,axis=1), phiphiT),tf.expand_dims(phi_old, axis=-1)),axis=[1,2])
             outer_product_op = tf.matmul(tf.expand_dims(phi_xt,axis=-1), tf.expand_dims(phi_xt,axis=1))
 
             sdp_ops = U.function(
@@ -537,12 +544,23 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
                 outputs=[phiphiTop,phiYop]
             )
 
+            old_q_func_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=tf.get_variable_scope().name + "/old_q_func")
+            update_old_expr = []
+            for var, var_old in zip(sorted(q_func_vars, key=lambda v: v.name),
+                                       sorted(old_q_func_vars, key=lambda v: v.name)):
+                update_old_expr.append(var_old.assign(var))
+            update_old_expr = tf.group(*update_old_expr)
+
+            feat_old = U.function([obs_t_input], phi_old)
+            update_old = U.function([], [], updates=[update_old_expr])
             blr_additions = {
                 'feat_dim': feat_dim,
                 'feature_extractor': feat,
                 'target_feature_extractor': feat_target,
                 'blr_ops': blr_ops,
                 'last_layer_weights': last_layer_weights,
+                'update_old': update_old,
+                'old_feature_extractor': feat_old,
                 'sdp_ops': sdp_ops
             }
         else:

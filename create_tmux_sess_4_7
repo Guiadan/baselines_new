@@ -1,0 +1,28 @@
+#!/bin/sh
+
+tmux new-session -d -s $1
+tmux send-keys 'export CUDA_VISIBLE_DEVICES=4' C-m
+tmux send-keys 'echo $CUDA_VISIBLE_DEVICES' C-m
+tmux send-keys 'cd baselines_new' C-m
+tmux send-keys 'source activate tensorflow_p36' C-m
+tmux send-keys 'python -m baselines.run --alg=deepq --env=EnduroNoFrameskip-v4 --seed=10 --num_timesteps=1e7 --exp_name=exp'
+tmux split-window -v
+tmux send-keys 'export CUDA_VISIBLE_DEVICES=5' C-m
+tmux send-keys 'echo $CUDA_VISIBLE_DEVICES' C-m
+tmux send-keys 'cd baselines_new' C-m
+tmux send-keys 'source activate tensorflow_p36' C-m
+tmux send-keys 'python -m baselines.run --alg=deepq --env=EnduroNoFrameskip-v4 --seed=20 --num_timesteps=1e7 --exp_name=exp'
+tmux split-window -v
+tmux send-keys 'export CUDA_VISIBLE_DEVICES=6' C-m
+tmux send-keys 'echo $CUDA_VISIBLE_DEVICES' C-m
+tmux send-keys 'cd baselines_new' C-m
+tmux send-keys 'source activate tensorflow_p36' C-m
+tmux send-keys 'python -m baselines.run --alg=deepq --env=EnduroNoFrameskip-v4 --seed=30 --num_timesteps=1e7 --exp_name=exp'
+tmux split-window -v
+tmux send-keys 'export CUDA_VISIBLE_DEVICES=7' C-m
+tmux send-keys 'echo $CUDA_VISIBLE_DEVICES' C-m
+tmux send-keys 'cd baselines_new' C-m
+tmux send-keys 'source activate tensorflow_p36' C-m
+tmux send-keys 'python -m baselines.run --alg=deepq --env=EnduroNoFrameskip-v4 --seed=40 --num_timesteps=1e7 --exp_name=exp'
+tmux select-layout even-vertical
+tmux setw synchronize-panes on

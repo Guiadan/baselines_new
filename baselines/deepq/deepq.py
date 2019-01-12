@@ -37,7 +37,7 @@ class BLRParams(object):
             self.update_w = 10 # multiplied by update target frequency
         self.batch_size = 200000# batch size to do blr from
         self.gamma = 0.99 #dqn gamma
-        self.feat_dim = 128 #256
+        self.feat_dim = 64 #256
         self.first_time = True
         self.no_prior = True
         self.a0 = 6
@@ -244,8 +244,8 @@ def BayesRegression(phiphiT, phiY, replay_buffer, dqn_feat, target_dqn_feat, num
         print("SDP prior")
         phiphiT0 = 1/blr_param.sigma * np.eye(feat_dim)
         if np.any(phiphiT != np.zeros_like(phiphiT)):
-            print("using 1000")
-            phiphiT0, _ = information_transfer_single(phiphiT/blr_param.sigma_n, dqn_feat, target_dqn_feat, replay_buffer, 1000      , num_actions, feat_dim, sdp_ops)
+            print("using 300")
+            phiphiT0, _ = information_transfer_single(phiphiT/blr_param.sigma_n, dqn_feat, target_dqn_feat, replay_buffer, 300      , num_actions, feat_dim, sdp_ops)
         phiY *= (1-blr_param.alpha)*0
         phiphiT *= (1-blr_param.alpha)*0
 
@@ -547,6 +547,7 @@ def learn(env,
     # Initialize the parameters and copy them to the target network.
     U.initialize()
     update_target()
+    blr_additions['update_old']()
 
     episode_rewards = [0.0]
     saved_mean_reward = None
@@ -645,7 +646,7 @@ def learn(env,
                         last_layer_weights_decaying_average *= 0.99
                         last_layer_weights_decaying_average += sess.run(blr_additions['last_layer_weights'])
 
-                if t > learning_starts and t % (blr_params.update_w*target_network_update_freq) == 0 and thompson:
+                if t > learning_starts and t % (blr_params.update_w*target_network_update_freq) == 0:
                     ADQN_prior = False # average dqn
                     if ADQN_prior:
                         print("last layer weights decaying average")
@@ -660,6 +661,7 @@ def learn(env,
                                                                  llw,
                                                                  prior=prior, blr_ops=blr_additions['blr_ops'],
                                                                  sdp_ops=blr_additions['sdp_ops'])
+                    blr_additions['update_old']()
 
             if t > learning_starts and t % target_network_update_freq == 0:
                 # Update target network periodically.
