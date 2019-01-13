@@ -44,7 +44,7 @@ class BLRParams(object):
         self.b0 = 6
 
 
-def information_transfer_new(phiphiT, dqn_feat, target_dqn_feat, replay_buffer, batch_size, num_actions, feat_dim, sdp_ops):
+def information_transfer_new(phiphiT, dqn_feat, target_dqn_feat, replay_buffer, batch_size, num_actions, feat_dim, sdp_ops, old_networks, blr_counter):
     d = [[] for i in range(num_actions)]
     phi = [[] for i in range(num_actions)]
     n = [0 for i in range(num_actions)]
@@ -101,7 +101,9 @@ def information_transfer_new(phiphiT, dqn_feat, target_dqn_feat, replay_buffer, 
     print(d2.minute - d1.minute + (d2.hour-d1.hour) * 60)
     return precisions_return, cov
 
-def information_transfer_single(phiphiT, dqn_feat, target_dqn_feat, replay_buffer, batch_size, num_actions, feat_dim, sdp_ops):
+def information_transfer_single(phiphiT, dqn_feat, target_dqn_feat,
+                                replay_buffer, batch_size, num_actions, feat_dim,
+                                sdp_ops, old_networks, blr_counter):
     d = []
     phi = []
     print("transforming information")
@@ -121,7 +123,12 @@ def information_transfer_single(phiphiT, dqn_feat, target_dqn_feat, replay_buffe
             if obs_t[action == k].shape[0] < 1:
                 continue
             nk = obs_t[action == k].shape[0]
-            pseudo_count_k, outer_k = sdp_ops(obs_t[action == k], obs_t[action == k], np.tile(phiphiT[k],(nk,1,1)))
+            pseudo_count_k, outer_k, debug = sdp_ops(obs_t[action == k], obs_t[action == k],
+                                              np.tile(old_networks[0]['phiphiT'][k],(nk,1,1)),
+                                              np.tile(old_networks[1]['phiphiT'][k],(nk,1,1)),
+                                              np.tile(old_networks[2]['phiphiT'][k],(nk,1,1)),
+                                              np.tile(old_networks[3]['phiphiT'][k],(nk,1,1)),
+                                              np.tile(old_networks[4]['phiphiT'][k],(nk,1,1)))
             outer_k = [np.array(p) for p in outer_k.tolist()]
             pseudo_count_k = pseudo_count_k.tolist()
             d.extend(pseudo_count_k)
@@ -217,7 +224,7 @@ def information_transfer(phiphiT, dqn_feat, target_dqn_feat, replay_buffer, batc
     return precisions_return, cov
 
 def BayesRegression(phiphiT, phiY, replay_buffer, dqn_feat, target_dqn_feat, num_actions, blr_param,
-                    w_mu, w_cov, last_layer_weights, prior="sdp", blr_ops=None, sdp_ops=None):
+                    w_mu, w_cov, last_layer_weights, prior="sdp", blr_ops=None, sdp_ops=None, old_networks=None, blr_counter=None):
     # dqn_ and target_dqn_ are feature extractors for the dqn and target dqn respectivley
     # in the neural linear settings target are the old features and dqn are the new features
     # last_layer_weights are the target last layer weights
@@ -245,7 +252,7 @@ def BayesRegression(phiphiT, phiY, replay_buffer, dqn_feat, target_dqn_feat, num
         phiphiT0 = 1/blr_param.sigma * np.eye(feat_dim)
         if np.any(phiphiT != np.zeros_like(phiphiT)):
             print("using 300")
-            phiphiT0, _ = information_transfer_single(phiphiT/blr_param.sigma_n, dqn_feat, target_dqn_feat, replay_buffer, 300      , num_actions, feat_dim, sdp_ops)
+            phiphiT0, _ = information_transfer_single(phiphiT/blr_param.sigma_n, dqn_feat, target_dqn_feat, replay_buffer, 300      , num_actions, feat_dim, sdp_ops, old_networks, blr_counter)
         phiY *= (1-blr_param.alpha)*0
         phiphiT *= (1-blr_param.alpha)*0
 
@@ -296,7 +303,7 @@ def BayesRegression(phiphiT, phiY, replay_buffer, dqn_feat, target_dqn_feat, num
             w_mu[i] = np.array(np.dot(inv,(phiY[i]/blr_param.sigma_n + (1/blr_param.sigma)*last_layer_weights[:,i])))
         else:
             if i == 0:
-                print("no prior")
+                print("prior: {}".format(prior))
             inv = np.linalg.inv(phiphiT[i]/blr_param.sigma_n + 1/blr_param.sigma * np.eye(feat_dim))
             w_mu[i] = np.array(np.dot(inv,phiY[i]))/blr_param.sigma_n
         w_cov[i] = blr_param.sigma*inv
@@ -548,6 +555,8 @@ def learn(env,
     U.initialize()
     update_target()
     blr_additions['update_old']()
+    for key in blr_additions['old_networks'].keys():
+        blr_additions['old_networks'][key]["update"]()
 
     episode_rewards = [0.0]
     saved_mean_reward = None
@@ -571,6 +580,7 @@ def learn(env,
         actions_hist = [0 for _ in range(num_actions)]
         actions_hist_total = [0 for _ in range(num_actions)]
         last_layer_weights_decaying_average = None
+        blr_counter = 0
         for t in tqdm(range(total_timesteps)):
 
             if callback is not None:
@@ -660,8 +670,18 @@ def learn(env,
                                                                  blr_params,w_mu, w_cov,
                                                                  llw,
                                                                  prior=prior, blr_ops=blr_additions['blr_ops'],
-                                                                 sdp_ops=blr_additions['sdp_ops'])
+                                                                 sdp_ops=blr_additions['sdp_ops'],
+                                                                 old_networks=blr_additions['old_networks'],
+                                                                 blr_counter=blr_counter)
                     blr_additions['update_old']()
+                    if blr_counter == 0:
+                        for key in blr_additions['old_networks'].keys():
+                            blr_additions['old_networks'][key]["update"]()
+                            blr_additions['old_networks'][key]["phiphiT"] = phiphiT
+                    else:
+                        blr_additions['old_networks'][blr_counter % 5]["update"]()
+                        blr_additions['old_networks'][blr_counter % 5]["phiphiT"] = phiphiT
+                    blr_counter += 1
 
             if t > learning_starts and t % target_network_update_freq == 0:
                 # Update target network periodically.

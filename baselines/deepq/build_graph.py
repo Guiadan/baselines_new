@@ -514,21 +514,43 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
             feat_target = U.function([obs_tp1_input], phi_target_xtp1)
 
             # old q network evalution
-            q_t_old, phi_old = q_func(obs_t_input.get(), num_actions, scope="old_q_func", reuse=True)
+            old_networks = {i:None for i in range(5)}
+            phiphiTs = []
+            for i in range(5):
+                q_t_old, phi_old = q_func(obs_t_input.get(), num_actions, scope="old_q_func_{}".format(i))
+                old_q_func_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=tf.get_variable_scope().name + "/old_q_func_{}".format(i))
+                update_old_expr = []
+                for var, var_old in zip(sorted(q_func_vars, key=lambda v: v.name),
+                                           sorted(old_q_func_vars, key=lambda v: v.name)):
+                    update_old_expr.append(var_old.assign(var))
+                update_old_expr = tf.group(*update_old_expr)
+                update_old = U.function([], [], updates=[update_old_expr])
+                feat_old = U.function([obs_t_input], phi_old)
+                phiphiT = tf.placeholder(tf.float32, [None] + [feat_dim, feat_dim], name="phiphiT_{}".format(i))
+                phiphiTs.append(phiphiT)
+                old_networks[i] = {"phi_old": phi_old, "phiphiT":phiphiT, "features": feat_old, "update": update_old}
 
-            phiphiT = tf.placeholder(tf.float32, [None] + [feat_dim, feat_dim], name="phiphiT")
-            pseudo_count = tf.reduce_sum(tf.matmul(tf.matmul(tf.expand_dims(phi_old,axis=1), phiphiT),tf.expand_dims(phi_old, axis=-1)),axis=[1,2])
+            q_t_old, phi_old = q_func(obs_t_input.get(), num_actions, scope="old_q_func", reuse=True)
+            # phiphiT = tf.placeholder(tf.float32, [None] + [feat_dim, feat_dim], name="phiphiT")
+            # pseudo_count = tf.reduce_sum(tf.matmul(tf.matmul(tf.expand_dims(phi_old,axis=1), phiphiT),tf.expand_dims(phi_old, axis=-1)),axis=[1,2])
             outer_product_op = tf.matmul(tf.expand_dims(phi_xt,axis=-1), tf.expand_dims(phi_xt,axis=1))
+
+            old_pseudo_counts = []
+            for i in range(5):
+                old_pseudo_counts.append(tf.reduce_sum(tf.matmul(tf.matmul(tf.expand_dims(old_networks[i]['phi_old'],axis=1), old_networks[i]['phiphiT']),tf.expand_dims(old_networks[i]['phi_old'], axis=-1)),axis=[1,2]))
+            debug = tf.stack(old_pseudo_counts)
+            pseudo_count = tf.reduce_max(tf.stack(old_pseudo_counts),axis=0)
 
             sdp_ops = U.function(
                 inputs=[
                     obs_t_input,
                     obs_tp1_input,
-                    phiphiT
+                    *phiphiTs
                 ],
                 outputs=[
                     pseudo_count,
-                    outer_product_op
+                    outer_product_op,
+                    debug
                 ]
             )
 
@@ -562,7 +584,8 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
                 'last_layer_weights': last_layer_weights,
                 'update_old': update_old,
                 'old_feature_extractor': feat_old,
-                'sdp_ops': sdp_ops
+                'sdp_ops': sdp_ops,
+                'old_networks': old_networks
             }
         else:
             blr_additions = None
