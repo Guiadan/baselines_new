@@ -44,7 +44,7 @@ class BLRParams(object):
         self.b0 = 6
 
 
-def information_transfer_new(phiphiT, dqn_feat, target_dqn_feat, replay_buffer, batch_size, num_actions, feat_dim, sdp_ops, old_networks, blr_counter):
+def information_transfer_new(phiphiT, dqn_feat, target_dqn_feat, replay_buffer, batch_size, num_actions, feat_dim, sdp_ops):
     d = [[] for i in range(num_actions)]
     phi = [[] for i in range(num_actions)]
     n = [0 for i in range(num_actions)]

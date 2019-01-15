@@ -539,7 +539,9 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
             for i in range(5):
                 old_pseudo_counts.append(tf.reduce_sum(tf.matmul(tf.matmul(tf.expand_dims(old_networks[i]['phi_old'],axis=1), old_networks[i]['phiphiT']),tf.expand_dims(old_networks[i]['phi_old'], axis=-1)),axis=[1,2]))
             debug = tf.stack(old_pseudo_counts)
-            pseudo_count = tf.reduce_max(tf.stack(old_pseudo_counts),axis=0)
+            # pseudo_count = tf.reduce_max(tf.stack(old_pseudo_counts),axis=0)
+            print("ensemble mean")
+            pseudo_count = tf.reduce_mean(tf.stack(old_pseudo_counts),axis=0)
 
             sdp_ops = U.function(
                 inputs=[
