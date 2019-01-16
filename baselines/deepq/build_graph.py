@@ -190,8 +190,9 @@ def build_act(make_obs_ph, q_func, num_actions, scope="deepq", reuse=None):
 
         output_actions = tf.cond(stochastic_ph, lambda: stochastic_actions, lambda: deterministic_actions)
         update_eps_expr = eps.assign(tf.cond(update_eps_ph >= 0, lambda: update_eps_ph, lambda: eps))
+        output_actions_est = tf.reduce_sum(q_values * tf.one_hot(output_actions, num_actions), 1)
         _act = U.function(inputs=[observations_ph, stochastic_ph, update_eps_ph],
-                         outputs=output_actions,
+                         outputs=[output_actions, output_actions_est],
                          givens={update_eps_ph: -1.0, stochastic_ph: True},
                          updates=[update_eps_expr])
         def act(ob, stochastic=True, update_eps=-1):
@@ -437,7 +438,10 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
         importance_weights_ph = tf.placeholder(tf.float32, [None], name="weight")
 
         # q network evaluation
-        q_t, phi_xt = q_func(obs_t_input.get(), num_actions, scope="q_func")#, reuse=True)  # reuse parameters from act
+        if thompson:
+            q_t, phi_xt = q_func(obs_t_input.get(), num_actions, scope="q_func")#, reuse=True)  # reuse parameters from act
+        else:
+            q_t, phi_xt = q_func(obs_t_input.get(), num_actions, scope="q_func", reuse=True)  # reuse parameters from act
         q_func_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=tf.get_variable_scope().name + "/q_func")
 
         # target q network evalution

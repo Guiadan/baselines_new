@@ -512,7 +512,7 @@ def learn(env,
         grad_norm_clipping=10,
         param_noise=param_noise,
         thompson=thompson,
-        double_q=not thompson
+        double_q=thompson
     )
 
     act_params = {
@@ -559,10 +559,11 @@ def learn(env,
     # Initialize the parameters and copy them to the target network.
     U.initialize()
     update_target()
-    blr_additions['update_old']()
-    if blr_additions['old_networks'] is not None:
-        for key in blr_additions['old_networks'].keys():
-            blr_additions['old_networks'][key]["update"]()
+    if thompson:
+        blr_additions['update_old']()
+        if blr_additions['old_networks'] is not None:
+            for key in blr_additions['old_networks'].keys():
+                blr_additions['old_networks'][key]["update"]()
 
     episode_rewards = [0.0]
     episode_Q_estimates = [0.0]
@@ -628,7 +629,7 @@ def learn(env,
                 actions_hist[int(action)] += 1
                 actions_hist_total[int(action)] += 1
             else:
-                action = act(np.array(obs)[None], update_eps=update_eps, **kwargs)[0]
+                action, estimate = act(np.array(obs)[None], update_eps=update_eps, **kwargs)
             env_action = action
             reset = False
             new_obs, rew, done, _ = env.step(env_action)
@@ -637,8 +638,7 @@ def learn(env,
             obs = new_obs
 
             episode_rewards[-1] += rew
-            if thompson:
-                episode_Q_estimates[-1] += estimate
+            episode_Q_estimates[-1] += estimate
             if done:
                 obs = env.reset()
                 episode_rewards.append(0.0)
