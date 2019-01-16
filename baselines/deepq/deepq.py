@@ -123,12 +123,17 @@ def information_transfer_single(phiphiT, dqn_feat, target_dqn_feat,
             if obs_t[action == k].shape[0] < 1:
                 continue
             nk = obs_t[action == k].shape[0]
-            pseudo_count_k, outer_k, debug = sdp_ops(obs_t[action == k], obs_t[action == k],
-                                              np.tile(old_networks[0]['phiphiT'][k],(nk,1,1)),
-                                              np.tile(old_networks[1]['phiphiT'][k],(nk,1,1)),
-                                              np.tile(old_networks[2]['phiphiT'][k],(nk,1,1)),
-                                              np.tile(old_networks[3]['phiphiT'][k],(nk,1,1)),
-                                              np.tile(old_networks[4]['phiphiT'][k],(nk,1,1)))
+            ensemble = False
+            if ensemble:
+                pseudo_count_k, outer_k, debug = sdp_ops(obs_t[action == k], obs_t[action == k],
+                                                         np.tile(old_networks[0]['phiphiT'][k],(nk,1,1)),
+                                                         np.tile(old_networks[1]['phiphiT'][k],(nk,1,1)),
+                                                         np.tile(old_networks[2]['phiphiT'][k],(nk,1,1)),
+                                                         np.tile(old_networks[3]['phiphiT'][k],(nk,1,1)),
+                                                         np.tile(old_networks[4]['phiphiT'][k],(nk,1,1)))
+            else:
+                pseudo_count_k, outer_k = sdp_ops(obs_t[action == k], obs_t[action == k], np.tile(phiphiT[k],(nk,1,1)))
+
             outer_k = [np.array(p) for p in outer_k.tolist()]
             pseudo_count_k = pseudo_count_k.tolist()
             d.extend(pseudo_count_k)
@@ -555,10 +560,12 @@ def learn(env,
     U.initialize()
     update_target()
     blr_additions['update_old']()
-    for key in blr_additions['old_networks'].keys():
-        blr_additions['old_networks'][key]["update"]()
+    if blr_additions['old_networks'] is not None:
+        for key in blr_additions['old_networks'].keys():
+            blr_additions['old_networks'][key]["update"]()
 
     episode_rewards = [0.0]
+    episode_Q_estimates = [0.0]
     saved_mean_reward = None
     obs = env.reset()
     reset = True
@@ -617,7 +624,7 @@ def learn(env,
                 cur_w = np.zeros((num_actions, feat_dim))
                 for i in range(num_actions):
                     cur_w[i] = w_sample[i, model_idx[i]]
-                action = act(np.array(obs)[None], cur_w[None])
+                action, estimate = act(np.array(obs)[None], cur_w[None])
                 actions_hist[int(action)] += 1
                 actions_hist_total[int(action)] += 1
             else:
@@ -630,9 +637,12 @@ def learn(env,
             obs = new_obs
 
             episode_rewards[-1] += rew
+            if thompson:
+                episode_Q_estimates[-1] += estimate
             if done:
                 obs = env.reset()
                 episode_rewards.append(0.0)
+                episode_Q_estimates.append(0.0)
                 reset = True
 
             if t > learning_starts and t % train_freq == 0:
@@ -674,13 +684,14 @@ def learn(env,
                                                                  old_networks=blr_additions['old_networks'],
                                                                  blr_counter=blr_counter)
                     blr_additions['update_old']()
-                    if blr_counter == 0:
-                        for key in blr_additions['old_networks'].keys():
-                            blr_additions['old_networks'][key]["update"]()
-                            blr_additions['old_networks'][key]["phiphiT"] = phiphiT
-                    else:
-                        blr_additions['old_networks'][blr_counter % 5]["update"]()
-                        blr_additions['old_networks'][blr_counter % 5]["phiphiT"] = phiphiT
+                    if blr_additions['old_networks'] is not None:
+                        if blr_counter == 0:
+                            for key in blr_additions['old_networks'].keys():
+                                blr_additions['old_networks'][key]["update"]()
+                                blr_additions['old_networks'][key]["phiphiT"] = phiphiT
+                        else:
+                            blr_additions['old_networks'][blr_counter % 5]["update"]()
+                            blr_additions['old_networks'][blr_counter % 5]["phiphiT"] = phiphiT
                     blr_counter += 1
 
             if t > learning_starts and t % target_network_update_freq == 0:
@@ -690,6 +701,8 @@ def learn(env,
 
             mean_100ep_reward = round(np.mean(episode_rewards[-101:-1]), 1)
             mean_10ep_reward = round(np.mean(episode_rewards[-11:-1]), 1)
+            mean_100ep_est = round(np.mean(episode_Q_estimates[-101:-1]), 1)
+            mean_10ep_est = round(np.mean(episode_Q_estimates[-11:-1]), 1)
             num_episodes = len(episode_rewards)
             # if done and print_freq is not None and len(episode_rewards) % print_freq == 0:
             if t % 10000 == 0:
@@ -697,6 +710,8 @@ def learn(env,
                 logger.record_tabular("episodes", num_episodes)
                 logger.record_tabular("mean 100 episode reward", mean_100ep_reward)
                 logger.record_tabular("mean 10 episode reward", mean_10ep_reward)
+                logger.record_tabular("mean 100 episode Q estimates", mean_100ep_est)
+                logger.record_tabular("mean 10 episode Q estimates", mean_10ep_est)
                 logger.dump_tabular()
 
             if (checkpoint_freq is not None and t > learning_starts and
