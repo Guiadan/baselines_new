@@ -23,7 +23,9 @@ from baselines.deepq.models import build_q_func, build_q_func_and_features
 from tqdm import tqdm
 import cvxpy as cvx
 from datetime import datetime
+from random import shuffle
 debug_flag = False
+structred_learning = False
 
 class BLRParams(object):
     def __init__(self):
@@ -33,9 +35,10 @@ class BLRParams(object):
         self.sample_w = 1000
         if debug_flag:
             self.update_w = 1 # multiplied by update target frequency
+            self.batch_size = 200# batch size to do blr from
         else:
+            self.batch_size = 1000000# batch size to do blr from
             self.update_w = 10 # multiplied by update target frequency
-        self.batch_size = 200000# batch size to do blr from
         self.gamma = 0.99 #dqn gamma
         self.feat_dim = 64 #256
         self.first_time = True
@@ -103,15 +106,21 @@ def information_transfer_new(phiphiT, dqn_feat, target_dqn_feat, replay_buffer, 
 
 def information_transfer_single(phiphiT, dqn_feat, target_dqn_feat,
                                 replay_buffer, batch_size, num_actions, feat_dim,
-                                sdp_ops, old_networks, blr_counter):
+                                sdp_ops, old_networks, blr_counter, blr_idxes=[]):
     d = []
     phi = []
     print("transforming information")
     d1 = datetime.now()
     information_transfer_single.calls += 1
-
-
-    obses_t, actions, rewards, obses_tp1, dones = replay_buffer.sample(batch_size)
+    if structred_learning:
+        idxes = [i for i in range(len(replay_buffer)) if i not in blr_idxes]
+        shuffle(idxes) #in place
+        obses_t, actions, rewards, obses_tp1, dones = replay_buffer.get_samples(idxes[:batch_size])
+    else:
+        idxes = [i for i in range(len(replay_buffer))]
+        shuffle(idxes)
+        obses_t, actions, rewards, obses_tp1, dones = replay_buffer.get_samples(idxes[:batch_size])
+        # obses_t, actions, rewards, obses_tp1, dones = replay_buffer.sample(batch_size)
     mini_batch_size = 32*num_actions
     for j in tqdm(range((batch_size // mini_batch_size)+1)):
         # obs_t, action, reward, obs_tp1, done = obses_t[j], actions[j], rewards[j], obses_tp1[j], dones[j]
@@ -235,6 +244,21 @@ def BayesRegression(phiphiT, phiY, replay_buffer, dqn_feat, target_dqn_feat, num
     # last_layer_weights are the target last layer weights
     feat_dim = blr_param.feat_dim
 
+    n_samples = blr_param.batch_size if len(replay_buffer) > blr_param.batch_size else len(replay_buffer)
+    if structred_learning:
+        s_idx = (replay_buffer._next_idx - n_samples) % len(replay_buffer)
+        if s_idx < replay_buffer._next_idx:
+            idxes = [idx for idx in range(s_idx,replay_buffer._next_idx)]
+        else:
+            idxes = [idx for idx in range(replay_buffer._next_idx)]
+            idxes.extend([idx for idx in range(s_idx,len(replay_buffer))])
+        obses_t, actions, rewards, obses_tp1, dones = replay_buffer.get_samples(idxes)
+    else:
+        # obses_t, actions, rewards, obses_tp1, dones = replay_buffer.sample(n_samples)
+        idxes = [i for i in range(len(replay_buffer))]
+        shuffle(idxes)
+        obses_t, actions, rewards, obses_tp1, dones = replay_buffer.get_samples(idxes[:n_samples])
+
     if prior == "no prior":
         print("no prior")
         phiY *= (1-blr_param.alpha)*0
@@ -257,15 +281,18 @@ def BayesRegression(phiphiT, phiY, replay_buffer, dqn_feat, target_dqn_feat, num
         phiphiT0 = 1/blr_param.sigma * np.eye(feat_dim)
         if np.any(phiphiT != np.zeros_like(phiphiT)):
             print("using 300")
-            phiphiT0, _ = information_transfer_single(phiphiT/blr_param.sigma_n, dqn_feat, target_dqn_feat, replay_buffer, 300      , num_actions, feat_dim, sdp_ops, old_networks, blr_counter)
+            if structred_learning:
+                print('structured learning')
+                phiphiT0, _ = information_transfer_single(phiphiT/blr_param.sigma_n, dqn_feat, target_dqn_feat, replay_buffer, 300      , num_actions, feat_dim, sdp_ops, old_networks, blr_counter, blr_idxes=idxes)
+            else:
+                phiphiT0, _ = information_transfer_single(phiphiT/blr_param.sigma_n, dqn_feat, target_dqn_feat, replay_buffer, 300      , num_actions, feat_dim, sdp_ops, old_networks, blr_counter)
         phiY *= (1-blr_param.alpha)*0
         phiphiT *= (1-blr_param.alpha)*0
 
     n = np.zeros(num_actions)
     cov_norms = [0. for _ in range(num_actions)]
     action_rewards = [0. for _ in range(num_actions)]
-    n_samples = blr_param.batch_size if len(replay_buffer) > blr_param.batch_size else len(replay_buffer)
-    obses_t, actions, rewards, obses_tp1, dones = replay_buffer.sample(n_samples)
+
     mini_batch_size = 32*num_actions
     for j in tqdm(range((n_samples // mini_batch_size)+1)):
         # obs_t, action, reward, obs_tp1, done = obses_t[j], actions[j], rewards[j], obses_tp1[j], dones[j]
@@ -613,6 +640,7 @@ def learn(env,
             if thompson:
                 if t > 0 and t % blr_params.sample_w == 0:
                     # sampling num_models samples of w
+                    # print(actions_hist)
                     actions_hist = [0. for _ in range(num_actions)]
                     for i in range(num_actions):
                         for j in range(num_models):
@@ -683,6 +711,8 @@ def learn(env,
                                                                  sdp_ops=blr_additions['sdp_ops'],
                                                                  old_networks=blr_additions['old_networks'],
                                                                  blr_counter=blr_counter)
+                    if seed is not None:
+                        print('seed is {}'.format(seed))
                     blr_additions['update_old']()
                     if blr_additions['old_networks'] is not None:
                         if blr_counter == 0:
