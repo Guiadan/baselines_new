@@ -29,7 +29,7 @@ structred_learning = False
 
 class BLRParams(object):
     def __init__(self):
-        self.sigma = 0.001 #W prior variance
+        self.sigma = 0.01 #0.001 W prior variance
         self.sigma_n = 1 # noise variance
         self.alpha = .01 # forgetting factor
         self.sample_w = 1000
