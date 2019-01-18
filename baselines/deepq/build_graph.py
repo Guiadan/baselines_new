@@ -565,14 +565,14 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
             else:
                 old_networks = None
                 q_t_old, phi_old = q_func(obs_t_input.get(), num_actions, scope="old_q_func", reuse=True)
-                phiphiT = tf.placeholder(tf.float32, [None] + [feat_dim, feat_dim], name="phiphiT")
-                pseudo_count = tf.reduce_sum(tf.matmul(tf.matmul(tf.expand_dims(phi_old,axis=1), phiphiT),tf.expand_dims(phi_old, axis=-1)),axis=[1,2])
+                phiphiT_inv = tf.placeholder(tf.float32, [None] + [feat_dim, feat_dim], name="phiphiT_inv")
+                pseudo_count = tf.reduce_sum(tf.matmul(tf.matmul(tf.expand_dims(phi_old,axis=1), phiphiT_inv),tf.expand_dims(phi_old, axis=-1)),axis=[1,2])
 
                 sdp_ops = U.function(
                     inputs=[
                         obs_t_input,
                         obs_tp1_input,
-                        phiphiT
+                        phiphiT_inv
                     ],
                     outputs=[
                         pseudo_count,
