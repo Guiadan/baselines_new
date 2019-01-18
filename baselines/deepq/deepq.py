@@ -160,7 +160,7 @@ def information_transfer_single(phiphiT, dqn_feat, target_dqn_feat,
                 continue
             nk = obs_t[action == k].shape[0]
 
-            pseudo_count_k, outer_k = sdp_ops(obs_t[action == k], obs_t[action == k], np.tile(phiphiT[k],(nk,1,1)))
+            pseudo_count_k, outer_k = sdp_ops(obs_t[action == k], obs_t[action == k], np.tile(phiphiT_inv[k],(nk,1,1)))
 
             outer_k = [np.array(p) for p in outer_k.tolist()]
             pseudo_count_k = pseudo_count_k.tolist()
@@ -168,7 +168,7 @@ def information_transfer_single(phiphiT, dqn_feat, target_dqn_feat,
             phi.extend(outer_k)
             pass
 
-    prior = 0.0001 * np.eye(feat_dim)
+    prior = 0.00001 * np.eye(feat_dim)
     precisions_return = np.linalg.inv(prior)
     cov = prior
     print("solving optimization")
@@ -184,8 +184,12 @@ def information_transfer_single(phiphiT, dqn_feat, target_dqn_feat,
         else:
             information_transfer_single.success_num += 1
             information_transfer_single.last_success = information_transfer_single.calls
-            precisions_return = X.value #+ np.linalg.inv(prior)
-            cov = np.linalg.inv(X.value + np.linalg.inv(prior))
+            # when solving for phiphiT
+            # precisions_return = X.value #+ np.linalg.inv(prior)
+            # cov = np.linalg.inv(X.value + np.linalg.inv(prior))
+            #when solving for phiphiT_inv
+            cov = X.value + prior
+            precisions_return = np.linalg.inv(X.value + prior)
             # print('phiphiT0 norm')
             # print(np.linalg.norm(X.value + np.linalg.inv(prior)))
             # print('cov norm')
@@ -320,7 +324,7 @@ def BayesRegression(phiphiT, phiY, replay_buffer, dqn_feat, target_dqn_feat, num
         phiY *= (1-blr_param.alpha)*0
     elif prior == "single sdp":
         print("single SDP prior")
-        phiphiT0 = 1/blr_param.sigma * np.eye(feat_dim)
+        # phiphiT0 = 1/blr_param.sigma * np.eye(feat_dim)
         # phiphiT0 = None
         # if np.any(phiphiT != np.zeros_like(phiphiT)):
         if blr_counter != 0:
@@ -381,6 +385,7 @@ def BayesRegression(phiphiT, phiY, replay_buffer, dqn_feat, target_dqn_feat, num
             else:
                 inv = np.linalg.pinv(phiphiT[i] + phiphiT0)
                 w_mu[i] = np.array(np.dot(inv,(phiY[i]/blr_param.sigma_n + np.dot(phiphiT0, last_layer_weights[:,i]))))
+                phiphiT[i] += phiphiT0
         elif prior == "last layer":
             if i == 0:
                 print("last layer weights only prior")
