@@ -274,11 +274,19 @@ def BayesRegression(phiphiT, phiY, replay_buffer, dqn_feat, target_dqn_feat, num
         print("SDP prior")
         phiphiT0  = None
         if np.any(phiphiT != np.zeros_like(phiphiT)):
-            phiphiT0, _ = information_transfer_new(phiphiT/blr_param.sigma_n, dqn_feat, target_dqn_feat, replay_buffer, 300*num_actions      , num_actions, feat_dim, sdp_ops)
+            for j in range(num_actions):
+                print("old phiphiT[{}] norm:".format(j))
+                print(np.linalg.norm(phiphiT[j]))
+            phiphiT0, cov0 = information_transfer_new(phiphiT/blr_param.sigma_n, dqn_feat, target_dqn_feat, replay_buffer, 300*num_actions      , num_actions, feat_dim, sdp_ops)
+            for j in range(num_actions):
+                print("old phiphiT[{}] new features norm:".format(j))
+                print(np.linalg.norm(phiphiT0[j]))
+                print("old cov0[{}] new features norm:".format(j))
+                print(np.linalg.norm(cov0[j]))
         phiY *= (1-blr_param.alpha)*0
         phiphiT *= (1-blr_param.alpha)*0
     elif prior == "single sdp":
-        print("SDP prior")
+        print("single SDP prior")
         phiphiT0 = 1/blr_param.sigma * np.eye(feat_dim)
         if np.any(phiphiT != np.zeros_like(phiphiT)):
             print("using 300")
@@ -286,7 +294,13 @@ def BayesRegression(phiphiT, phiY, replay_buffer, dqn_feat, target_dqn_feat, num
                 print('structured learning')
                 phiphiT0, _ = information_transfer_single(phiphiT/blr_param.sigma_n, dqn_feat, target_dqn_feat, replay_buffer, 300      , num_actions, feat_dim, sdp_ops, old_networks, blr_counter, blr_idxes=idxes)
             else:
-                phiphiT0, _ = information_transfer_single(phiphiT/blr_param.sigma_n, dqn_feat, target_dqn_feat, replay_buffer, 300      , num_actions, feat_dim, sdp_ops, old_networks, blr_counter)
+                print("old phiphiT norm:")
+                print(np.linalg.norm(phiphiT[5]))
+                phiphiT0, cov0 = information_transfer_single(phiphiT/blr_param.sigma_n, dqn_feat, target_dqn_feat, replay_buffer, 300      , num_actions, feat_dim, sdp_ops, old_networks, blr_counter)
+                print("old phiphiT new features norm:")
+                print(np.linalg.norm(phiphiT0))
+                print("old cov new features norm:")
+                print(np.linalg.norm(cov0))
         phiY *= (1-blr_param.alpha)*0
         phiphiT *= (1-blr_param.alpha)*0
 
@@ -314,14 +328,12 @@ def BayesRegression(phiphiT, phiY, replay_buffer, dqn_feat, target_dqn_feat, num
             action_rewards[k] += sum(reward[action == k])
     print(n, np.sum(n))
     for i in range(num_actions):
-        phiphiT[i] = phiphiT[i] / n[i]
         if prior == "sdp":# and phiphiT0 is not None:
             if i == 0:
                 print("regular sdp")
             if phiphiT0 is None:
                 inv = np.linalg.inv(phiphiT[i]/blr_param.sigma_n + 1/blr_param.sigma * np.eye(feat_dim))
                 w_mu[i] = np.array(np.dot(inv,phiY[i]))/blr_param.sigma_n
-                np.linalg.norm(phiphiT[i]/blr_param.sigma_n)
             else:
                 inv = np.linalg.inv(phiphiT[i]/blr_param.sigma_n + phiphiT0[i])
                 w_mu[i] = np.array(np.dot(inv,(phiY[i]/blr_param.sigma_n + np.dot(phiphiT0[i], last_layer_weights[:,i]))))
@@ -336,10 +348,11 @@ def BayesRegression(phiphiT, phiY, replay_buffer, dqn_feat, target_dqn_feat, num
             print(np.linalg.norm(phiphiT[i]))
             print("prior norm:")
             print(np.linalg.norm(phiphiT0))
-            print("inv norm")
-            print(np.linalg.norm(inv))
-            print("inv norm * sigma")
-            print(np.linalg.norm(blr_param.sigma*inv))
+            if i == 0:
+                print("inv norm")
+                print(np.linalg.norm(inv))
+                print("inv norm * sigma")
+                print(np.linalg.norm(blr_param.sigma*inv))
         elif prior == "last layer":
             if i == 0:
                 print("last layer weights only prior")
