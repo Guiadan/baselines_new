@@ -1,4 +1,4 @@
-debug = False
+from baselines.deepq.deepq import debug_flag as debug
 def atari():
     if debug:
         return dict(

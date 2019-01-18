@@ -29,7 +29,7 @@ structred_learning = False
 
 class BLRParams(object):
     def __init__(self):
-        self.sigma = 0.01 #0.001 W prior variance
+        self.sigma = 15.0 #0.001 W prior variance
         self.sigma_n = 1 # noise variance
         self.alpha = .01 # forgetting factor
         self.sample_w = 1000
@@ -107,6 +107,7 @@ def information_transfer_new(phiphiT, dqn_feat, target_dqn_feat, replay_buffer, 
 def information_transfer_single(phiphiT, dqn_feat, target_dqn_feat,
                                 replay_buffer, batch_size, num_actions, feat_dim,
                                 sdp_ops, old_networks, blr_counter, blr_idxes=[]):
+    blr_params = BLRParams()
     d = []
     phi = []
     print("transforming information")
@@ -149,7 +150,7 @@ def information_transfer_single(phiphiT, dqn_feat, target_dqn_feat,
             phi.extend(outer_k)
             pass
 
-    prior = (1/0.001) * np.eye(feat_dim)
+    prior = (1/blr_params.sigma) * np.eye(feat_dim)
     precisions_return = np.linalg.inv(prior)
     cov = prior
     print("solving optimization")
@@ -319,15 +320,25 @@ def BayesRegression(phiphiT, phiY, replay_buffer, dqn_feat, target_dqn_feat, num
             if phiphiT0 is None:
                 inv = np.linalg.inv(phiphiT[i]/blr_param.sigma_n + 1/blr_param.sigma * np.eye(feat_dim))
                 w_mu[i] = np.array(np.dot(inv,phiY[i]))/blr_param.sigma_n
+                np.linalg.norm(phiphiT[i]/blr_param.sigma_n)
             else:
                 inv = np.linalg.inv(phiphiT[i]/blr_param.sigma_n + phiphiT0[i])
                 w_mu[i] = np.array(np.dot(inv,(phiY[i]/blr_param.sigma_n + np.dot(phiphiT0[i], last_layer_weights[:,i]))))
+
         elif prior == "single sdp":
             # shared phiphiT0
             if i == 0:
                 print("single sdp")
             inv = np.linalg.inv(phiphiT[i]/blr_param.sigma_n + phiphiT0)
             w_mu[i] = np.array(np.dot(inv,(phiY[i]/blr_param.sigma_n + np.dot(phiphiT0, last_layer_weights[:,i]))))
+            print("phiphiT[{}] norm:".format(i))
+            print(np.linalg.norm(phiphiT[i]))
+            print("prior norm:")
+            print(np.linalg.norm(phiphiT0))
+            print("inv norm")
+            print(np.linalg.norm(inv))
+            print("inv norm * sigma")
+            print(np.linalg.norm(blr_param.sigma*inv))
         elif prior == "last layer":
             if i == 0:
                 print("last layer weights only prior")
@@ -593,7 +604,8 @@ def learn(env,
                 blr_additions['old_networks'][key]["update"]()
 
     episode_rewards = [0.0]
-    episode_Q_estimates = [0.0]
+    # episode_Q_estimates = [0.0]
+    unclipped_episode_rewards = [0.0]
     saved_mean_reward = None
     obs = env.reset()
     reset = True
@@ -660,17 +672,20 @@ def learn(env,
                 action, estimate = act(np.array(obs)[None], update_eps=update_eps, **kwargs)
             env_action = action
             reset = False
-            new_obs, rew, done, _ = env.step(env_action)
+            new_obs, unclipped_rew, done, _ = env.step(env_action)
+            rew = np.sign(unclipped_rew)
             # Store transition in the replay buffer.
             replay_buffer.add(obs, action, rew, new_obs, float(done))
             obs = new_obs
 
             episode_rewards[-1] += rew
-            episode_Q_estimates[-1] += estimate
+            # episode_Q_estimates[-1] += estimate
+            unclipped_episode_rewards[-1] += unclipped_rew
             if done:
                 obs = env.reset()
                 episode_rewards.append(0.0)
-                episode_Q_estimates.append(0.0)
+                # episode_Q_estimates.append(0.0)
+                unclipped_episode_rewards.append(0.0)
                 reset = True
 
             if t > learning_starts and t % train_freq == 0:
@@ -731,8 +746,10 @@ def learn(env,
 
             mean_100ep_reward = round(np.mean(episode_rewards[-101:-1]), 1)
             mean_10ep_reward = round(np.mean(episode_rewards[-11:-1]), 1)
-            mean_100ep_est = round(np.mean(episode_Q_estimates[-101:-1]), 1)
-            mean_10ep_est = round(np.mean(episode_Q_estimates[-11:-1]), 1)
+            mean_100ep_reward_unclipped = round(np.mean(unclipped_episode_rewards[-101:-1]), 1)
+            mean_10ep_reward_unclipped = round(np.mean(unclipped_episode_rewards[-11:-1]), 1)
+            # mean_100ep_est = round(np.mean(episode_Q_estimates[-101:-1]), 1)
+            # mean_10ep_est = round(np.mean(episode_Q_estimates[-11:-1]), 1)
             num_episodes = len(episode_rewards)
             # if done and print_freq is not None and len(episode_rewards) % print_freq == 0:
             if t % 10000 == 0:
@@ -740,8 +757,10 @@ def learn(env,
                 logger.record_tabular("episodes", num_episodes)
                 logger.record_tabular("mean 100 episode reward", mean_100ep_reward)
                 logger.record_tabular("mean 10 episode reward", mean_10ep_reward)
-                logger.record_tabular("mean 100 episode Q estimates", mean_100ep_est)
-                logger.record_tabular("mean 10 episode Q estimates", mean_10ep_est)
+                logger.record_tabular("mean 100 unclipped episode reward", mean_100ep_reward_unclipped)
+                logger.record_tabular("mean 10 unclipped episode reward", mean_10ep_reward_unclipped)
+                # logger.record_tabular("mean 100 episode Q estimates", mean_100ep_est)
+                # logger.record_tabular("mean 10 episode Q estimates", mean_10ep_est)
                 logger.dump_tabular()
 
             if (checkpoint_freq is not None and t > learning_starts and
