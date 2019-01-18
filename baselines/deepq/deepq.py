@@ -314,6 +314,7 @@ def BayesRegression(phiphiT, phiY, replay_buffer, dqn_feat, target_dqn_feat, num
             action_rewards[k] += sum(reward[action == k])
     print(n, np.sum(n))
     for i in range(num_actions):
+        phiphiT[i] = phiphiT[i] / n[i]
         if prior == "sdp":# and phiphiT0 is not None:
             if i == 0:
                 print("regular sdp")
