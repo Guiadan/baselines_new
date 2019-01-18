@@ -30,7 +30,7 @@ first_time = True
 
 class BLRParams(object):
     def __init__(self):
-        self.sigma = 15.001 #0.001 W prior variance
+        self.sigma = 10.0 #0.001 W prior variance
         self.sigma_n = 1 # noise variance
         self.alpha = .01 # forgetting factor
         self.sample_w = 1000
@@ -328,12 +328,12 @@ def BayesRegression(phiphiT, phiY, replay_buffer, dqn_feat, target_dqn_feat, num
         # phiphiT0 = None
         # if np.any(phiphiT != np.zeros_like(phiphiT)):
         if blr_counter != 0:
-            print("using 300")
+            print("using 600")
             if structred_learning:
                 print('structured learning')
                 phiphiT0, _ = information_transfer_single(phiphiT, dqn_feat, target_dqn_feat, replay_buffer, 300      , num_actions, feat_dim, sdp_ops, old_networks, blr_counter, blr_idxes=idxes)
             else:
-                phiphiT0, cov0 = information_transfer_single(phiphiT, dqn_feat, target_dqn_feat, replay_buffer, 300      , num_actions, feat_dim, sdp_ops, old_networks, blr_counter)
+                phiphiT0, cov0 = information_transfer_single(phiphiT, dqn_feat, target_dqn_feat, replay_buffer, 600      , num_actions, feat_dim, sdp_ops, old_networks, blr_counter)
             phiphiT *= (1-blr_param.alpha)*0
         phiY *= (1-blr_param.alpha)*0
 
@@ -641,7 +641,7 @@ def learn(env,
 
         phiphiT = np.zeros((num_actions,feat_dim,feat_dim))
         for i in range(num_actions):
-            phiphiT[i] = 0.25*np.eye(feat_dim)
+            phiphiT[i] = (1/blr_params.sigma)*np.eye(feat_dim)
         phiY = np.zeros((num_actions, feat_dim))
         model_idx = np.random.randint(0,num_models,size=num_actions)
         w_norms = [np.linalg.norm(w_sample[i,model_idx[i]]) for i in range(num_actions)]
