@@ -78,7 +78,7 @@ def information_transfer_new(phiphiT, dqn_feat, target_dqn_feat, replay_buffer, 
             if obs_t[action == k].shape[0] < 1:
                 continue
             nk = obs_t[action == k].shape[0]
-            pseudo_count_k, outer_k = sdp_ops(obs_t[action == k], obs_t[action == k], np.tile(phiphiT[k],(nk,1,1)))
+            pseudo_count_k, outer_k = sdp_ops(obs_t[action == k], obs_t[action == k], np.tile(phiphiT_inv[k],(nk,1,1)))
             outer_k = [np.array(p) for p in outer_k.tolist()]
             pseudo_count_k = pseudo_count_k.tolist()
             d[k].extend(pseudo_count_k)
@@ -103,24 +103,6 @@ def information_transfer_new(phiphiT, dqn_feat, target_dqn_feat, replay_buffer, 
                 precisions_return.append(np.linalg.inv(prior))
                 cov.append(prior)
             else:
-                print("no sdp prior norm inverse")
-                print(np.linalg.norm(np.linalg.pinv(X.value)))
-                print("no sdp prior norm ")
-                print(np.linalg.norm(X.value))
-                print("sdp prior norm inverse")
-                print(np.linalg.norm(np.linalg.inv(X.value + prior)))
-                print("sdp prior norm ")
-                print(np.linalg.norm(X.value + prior))
-                for g, e in zip(d[a],phi[a]):
-                    est = np.trace(np.matmul(X.value,e))
-                    mse = (g-e)**2
-                    print("est:")
-                    print(est)
-                    print("ground truth:")
-                    print(g)
-                    print("mse:")
-                    print(mse)
-
                 precisions_return.append(np.linalg.inv(X.value + prior))
                 cov.append(X.value + prior)
         else:
@@ -314,7 +296,7 @@ def BayesRegression(phiphiT, phiY, replay_buffer, dqn_feat, target_dqn_feat, num
             for j in range(num_actions):
                 print("old phiphiT[{}] norm:".format(j))
                 print(np.linalg.norm(phiphiT[j]))
-            phiphiT0, cov0 = information_transfer_new(phiphiT, dqn_feat, target_dqn_feat, replay_buffer, 600*num_actions      , num_actions, feat_dim, sdp_ops)
+            phiphiT0, cov0 = information_transfer_new(phiphiT, dqn_feat, target_dqn_feat, replay_buffer, 300*num_actions      , num_actions, feat_dim, sdp_ops)
             for j in range(num_actions):
                 print("old phiphiT[{}] new features norm:".format(j))
                 print(np.linalg.norm(phiphiT0[j]))
@@ -328,12 +310,12 @@ def BayesRegression(phiphiT, phiY, replay_buffer, dqn_feat, target_dqn_feat, num
         # phiphiT0 = None
         # if np.any(phiphiT != np.zeros_like(phiphiT)):
         if blr_counter != 0:
-            print("using 600")
+            print("using 300")
             if structred_learning:
                 print('structured learning')
                 phiphiT0, _ = information_transfer_single(phiphiT, dqn_feat, target_dqn_feat, replay_buffer, 300      , num_actions, feat_dim, sdp_ops, old_networks, blr_counter, blr_idxes=idxes)
             else:
-                phiphiT0, cov0 = information_transfer_single(phiphiT, dqn_feat, target_dqn_feat, replay_buffer, 600      , num_actions, feat_dim, sdp_ops, old_networks, blr_counter)
+                phiphiT0, cov0 = information_transfer_single(phiphiT, dqn_feat, target_dqn_feat, replay_buffer, 300      , num_actions, feat_dim, sdp_ops, old_networks, blr_counter)
             phiphiT *= (1-blr_param.alpha)*0
         phiY *= (1-blr_param.alpha)*0
 
