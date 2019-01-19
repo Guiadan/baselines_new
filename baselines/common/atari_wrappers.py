@@ -77,7 +77,7 @@ class EpisodicLifeEnv(gym.Wrapper):
             # the environment advertises done.
             done = True
         self.lives = lives
-        return obs, reward, done, info
+        return obs, reward, [done, self.was_real_done], info
 
     def reset(self, **kwargs):
         """Reset only when lives are exhausted.

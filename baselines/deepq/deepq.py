@@ -33,7 +33,7 @@ class BLRParams(object):
         self.sigma = 10.0 #0.001 W prior variance
         self.sigma_n = 1 # noise variance
         self.alpha = .01 # forgetting factor
-        self.sample_w = 1000
+        self.sample_w = 10000
         if debug_flag:
             self.update_w = 1 # multiplied by update target frequency
         else:
@@ -615,7 +615,7 @@ def learn(env,
         feat_dim = blr_additions['feat_dim']
         num_models = 10
         print("num models is: {}".format(num_models))
-        w_sample = np.random.normal(loc=0, scale=0.01, size=(num_actions, num_models, feat_dim))
+        w_sample = np.random.normal(loc=0, scale=blr_params.sigma, size=(num_actions, num_models, feat_dim))
         w_mu = np.zeros((num_actions, feat_dim))
         w_cov = np.zeros((num_actions, feat_dim,feat_dim))
         for i in range(num_actions):
@@ -706,7 +706,8 @@ def learn(env,
                 action, estimate = act(np.array(obs)[None], update_eps=update_eps, **kwargs)
             env_action = action
             reset = False
-            new_obs, unclipped_rew, done, _ = env.step(env_action)
+            new_obs, unclipped_rew, done_list, _ = env.step(env_action)
+            done, real_done = done_list
             rew = np.sign(unclipped_rew)
             # Store transition in the replay buffer.
             replay_buffer.add(obs, action, rew, new_obs, float(done))
@@ -719,8 +720,9 @@ def learn(env,
                 obs = env.reset()
                 episode_rewards.append(0.0)
                 # episode_Q_estimates.append(0.0)
-                unclipped_episode_rewards.append(0.0)
                 reset = True
+            if real_done:
+                unclipped_episode_rewards.append(0.0)
 
             if t > learning_starts and t % train_freq == 0:
                 # Minimize the error in Bellman's equation on a batch sampled from replay buffer.
