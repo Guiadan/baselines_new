@@ -30,7 +30,7 @@ first_time = True
 
 class BLRParams(object):
     def __init__(self):
-        self.sigma = 10.0 #0.001 W prior variance
+        self.sigma = 0.001 #0.001 W prior variance
         self.sigma_n = 1 # noise variance
         self.alpha = .01 # forgetting factor
         self.sample_w = 10000
@@ -40,7 +40,7 @@ class BLRParams(object):
             self.update_w = 10 # multiplied by update target frequency
         self.batch_size = 1000000# batch size to do blr from
         self.gamma = 0.99 #dqn gamma
-        self.feat_dim = 64 #256
+        self.feat_dim = 128 #256
         self.first_time = True
         self.no_prior = True
         self.a0 = 6
@@ -310,12 +310,12 @@ def BayesRegression(phiphiT, phiY, replay_buffer, dqn_feat, target_dqn_feat, num
         # phiphiT0 = None
         # if np.any(phiphiT != np.zeros_like(phiphiT)):
         if blr_counter != 0:
-            print("using 300")
+            print("using 600")
             if structred_learning:
                 print('structured learning')
-                phiphiT0, _ = information_transfer_single(phiphiT, dqn_feat, target_dqn_feat, replay_buffer, 300      , num_actions, feat_dim, sdp_ops, old_networks, blr_counter, blr_idxes=idxes)
+                phiphiT0, _ = information_transfer_single(phiphiT, dqn_feat, target_dqn_feat, replay_buffer, 600      , num_actions, feat_dim, sdp_ops, old_networks, blr_counter, blr_idxes=idxes)
             else:
-                phiphiT0, cov0 = information_transfer_single(phiphiT, dqn_feat, target_dqn_feat, replay_buffer, 300      , num_actions, feat_dim, sdp_ops, old_networks, blr_counter)
+                phiphiT0, cov0 = information_transfer_single(phiphiT, dqn_feat, target_dqn_feat, replay_buffer, 600      , num_actions, feat_dim, sdp_ops, old_networks, blr_counter)
             phiphiT *= (1-blr_param.alpha)*0
         phiY *= (1-blr_param.alpha)*0
 
@@ -362,10 +362,12 @@ def BayesRegression(phiphiT, phiY, replay_buffer, dqn_feat, target_dqn_feat, num
             if i == 0:
                 print("single sdp")
             if blr_counter == 0:
-                inv = np.linalg.pinv(phiphiT[i])
+                inv = np.linalg.inv(phiphiT[i])
                 w_mu[i] = np.array(np.dot(inv,(phiY[i])))# + np.dot(phiphiT0, last_layer_weights[:,i]))))
             else:
-                inv = np.linalg.pinv(phiphiT[i] + phiphiT0)
+                print("phiphiT[{}] phiphiT0".format([i]))
+                print([np.linalg.norm(phiphiT[i]), np.linalg.norm(phiphiT0)])
+                inv = np.linalg.inv(phiphiT[i] + phiphiT0)
                 w_mu[i] = np.array(np.dot(inv,(phiY[i]/blr_param.sigma_n + np.dot(phiphiT0, last_layer_weights[:,i]))))
                 phiphiT[i] += phiphiT0
         elif prior == "last layer":
@@ -378,10 +380,11 @@ def BayesRegression(phiphiT, phiY, replay_buffer, dqn_feat, target_dqn_feat, num
                 print("prior: {}".format(prior))
             inv = np.linalg.inv(phiphiT[i]/blr_param.sigma_n + 1/blr_param.sigma * np.eye(feat_dim))
             w_mu[i] = np.array(np.dot(inv,phiY[i]))/blr_param.sigma_n
+
         w_cov[i] = blr_param.sigma*inv
         cov_norms[i] = np.linalg.norm(w_cov[i])
-    # print("covariance matrices norms:")
-    # print(cov_norms)
+    print("covariance matrices norms:")
+    print(cov_norms)
     # print("reward gathered for actions")
     # print(action_rewards)
     # for i in range(num_actions):
@@ -798,6 +801,10 @@ def learn(env,
                 # logger.record_tabular("mean 100 episode Q estimates", mean_100ep_est)
                 # logger.record_tabular("mean 10 episode Q estimates", mean_10ep_est)
                 logger.dump_tabular()
+                print("len(unclipped_episode_rewards)")
+                print(len(unclipped_episode_rewards))
+                print("len(unclipped_episode_rewards)")
+                print(len(episode_rewards))
 
             if (checkpoint_freq is not None and t > learning_starts and
                     num_episodes > 100 and t % checkpoint_freq == 0):
