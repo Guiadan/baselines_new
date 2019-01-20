@@ -616,7 +616,7 @@ def learn(env,
     if thompson:
         # Create parameters for Bayesian Regression
         feat_dim = blr_additions['feat_dim']
-        num_models = 10
+        num_models = 5
         print("num models is: {}".format(num_models))
         w_sample = np.random.normal(loc=0, scale=blr_params.sigma, size=(num_actions, num_models, feat_dim))
         w_mu = np.zeros((num_actions, feat_dim))
@@ -801,10 +801,11 @@ def learn(env,
                 # logger.record_tabular("mean 100 episode Q estimates", mean_100ep_est)
                 # logger.record_tabular("mean 10 episode Q estimates", mean_10ep_est)
                 logger.dump_tabular()
-                print("len(unclipped_episode_rewards)")
-                print(len(unclipped_episode_rewards))
-                print("len(unclipped_episode_rewards)")
-                print(len(episode_rewards))
+                if t % 7 == 0:
+                    print("len(unclipped_episode_rewards)")
+                    print(len(unclipped_episode_rewards))
+                    print("len(episode_rewards)")
+                    print(len(episode_rewards))
 
             if (checkpoint_freq is not None and t > learning_starts and
                     num_episodes > 100 and t % checkpoint_freq == 0):
