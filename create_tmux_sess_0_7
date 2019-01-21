@@ -1,0 +1,58 @@
+#!/bin/sh
+
+tmux new-session -d -s $1
+tmux send-keys 'export CUDA_VISIBLE_DEVICES=0' C-m
+tmux send-keys 'echo $CUDA_VISIBLE_DEVICES' C-m
+tmux send-keys 'cd baselines_new' C-m
+tmux send-keys 'source activate tensorflow_p36' C-m
+tmux send-keys 'python -m baselines.run --alg=deepq --env=BeamRiderNoFrameskip-v4 --seed=10 --num_timesteps=1e8  --thompson=True --prior=single sdp --exp_name=exp'
+tmux split-window -v
+tmux send-keys 'export CUDA_VISIBLE_DEVICES=1' C-m
+tmux send-keys 'echo $CUDA_VISIBLE_DEVICES' C-m
+tmux send-keys 'cd baselines_new' C-m
+tmux send-keys 'source activate tensorflow_p36' C-m
+tmux send-keys 'python -m baselines.run --alg=deepq --env=BeamRiderNoFrameskip-v4 --seed=20 --num_timesteps=1e8  --thompson=True --prior=single sdp --exp_name=exp'
+tmux select-layout even-vertical
+tmux split-window -v
+tmux send-keys 'export CUDA_VISIBLE_DEVICES=2' C-m
+tmux send-keys 'echo $CUDA_VISIBLE_DEVICES' C-m
+tmux send-keys 'cd baselines_new' C-m
+tmux send-keys 'source activate tensorflow_p36' C-m
+tmux send-keys 'python -m baselines.run --alg=deepq --env=BeamRiderNoFrameskip-v4 --seed=30 --num_timesteps=1e8  --thompson=True --prior=single sdp --exp_name=exp'
+tmux select-layout even-vertical
+tmux split-window -v
+tmux send-keys 'export CUDA_VISIBLE_DEVICES=3' C-m
+tmux send-keys 'echo $CUDA_VISIBLE_DEVICES' C-m
+tmux send-keys 'cd baselines_new' C-m
+tmux send-keys 'source activate tensorflow_p36' C-m
+tmux send-keys 'python -m baselines.run --alg=deepq --env=BeamRiderNoFrameskip-v4 --seed=40 --num_timesteps=1e8  --thompson=True --prior=single sdp --exp_name=exp'
+tmux select-layout even-vertical
+tmux split-window -v
+tmux send-keys 'export CUDA_VISIBLE_DEVICES=4' C-m
+tmux send-keys 'echo $CUDA_VISIBLE_DEVICES' C-m
+tmux send-keys 'cd baselines_new' C-m
+tmux send-keys 'source activate tensorflow_p36' C-m
+tmux send-keys 'python -m baselines.run --alg=deepq --env=BeamRiderNoFrameskip-v4 --seed=50 --num_timesteps=1e8  --thompson=True --prior=single sdp --exp_name=exp'
+tmux select-layout even-vertical
+tmux split-window -v
+tmux send-keys 'export CUDA_VISIBLE_DEVICES=5' C-m
+tmux send-keys 'echo $CUDA_VISIBLE_DEVICES' C-m
+tmux send-keys 'cd baselines_new' C-m
+tmux send-keys 'source activate tensorflow_p36' C-m
+tmux send-keys 'python -m baselines.run --alg=deepq --env=BeamRiderNoFrameskip-v4 --seed=60 --num_timesteps=1e8  --thompson=True --prior=single sdp --exp_name=exp'
+tmux select-layout even-vertical
+tmux split-window -v
+tmux send-keys 'export CUDA_VISIBLE_DEVICES=6' C-m
+tmux send-keys 'echo $CUDA_VISIBLE_DEVICES' C-m
+tmux send-keys 'cd baselines_new' C-m
+tmux send-keys 'source activate tensorflow_p36' C-m
+tmux send-keys 'python -m baselines.run --alg=deepq --env=BeamRiderNoFrameskip-v4 --seed=70 --num_timesteps=1e8  --thompson=True --prior=single sdp --exp_name=exp'
+tmux select-layout even-vertical
+tmux split-window -v
+tmux send-keys 'export CUDA_VISIBLE_DEVICES=7' C-m
+tmux send-keys 'echo $CUDA_VISIBLE_DEVICES' C-m
+tmux send-keys 'cd baselines_new' C-m
+tmux send-keys 'source activate tensorflow_p36' C-m
+tmux send-keys 'python -m baselines.run --alg=deepq --env=BeamRiderNoFrameskip-v4 --seed=80 --num_timesteps=1e8  --thompson=True --prior=single sdp --exp_name=exp'
+tmux select-layout even-vertical
+tmux setw synchronize-panes on

@@ -288,6 +288,8 @@ def BayesRegression(phiphiT, phiY, replay_buffer, dqn_feat, target_dqn_feat, num
         phiphiT *= (1-blr_param.alpha)
     elif prior == "last layer":
         print("last layer weights only prior")
+        phiY *= (1-blr_param.alpha)*0
+        phiphiT *= (1-blr_param.alpha)*0
     elif prior == "sdp":
         print("SDP prior")
         phiphiT0  = None
