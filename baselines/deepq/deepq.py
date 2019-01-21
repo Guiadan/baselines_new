@@ -687,25 +687,6 @@ def learn(env,
                 kwargs['update_param_noise_threshold'] = update_param_noise_threshold
                 kwargs['update_param_noise_scale'] = True
 
-            if thompson:
-                if t > 0 and t % blr_params.sample_w == 0:
-                    # sampling num_models samples of w
-                    # print(actions_hist)
-                    actions_hist = [0. for _ in range(num_actions)]
-                    for i in range(num_actions):
-                        if prior == 'no prior' or last_layer_weights is None:
-                            cov = np.linalg.inv(phiphiT[i])
-                            mu = np.array(np.dot(cov,phiY[i]))
-                        elif prior == 'last layer':
-                            cov = np.linalg.inv(phiphiT[i])
-                            mu = np.array(np.dot(cov,(phiY[i] + (1/blr_params.sigma)*last_layer_weights[:,i])))
-                        elif prior == 'single sdp':
-                            cov = np.linalg.inv(phiphiT[i] + phiphiT0)
-                            mu = np.array(np.dot(cov,(phiY[i] + np.dot(phiphiT0, last_layer_weights[:,i]))))
-
-                        for j in range(num_models):
-                            w_sample[i, j] = np.random.multivariate_normal(mu, blr_params.sigma*cov)
-                    # w_norms = [np.linalg.norm(w_sample[i]) for i in range(num_actions)]
 
             if thompson:
                 # for each action sample one of the num_models samples of w
@@ -793,6 +774,26 @@ def learn(env,
                     #         blr_additions['old_networks'][blr_counter % 5]["update"]()
                     #         blr_additions['old_networks'][blr_counter % 5]["phiphiT"] = phiphiT
                     blr_counter += 1
+
+            if thompson:
+                if t > 0 and t % blr_params.sample_w == 0:
+                    # sampling num_models samples of w
+                    # print(actions_hist)
+                    actions_hist = [0. for _ in range(num_actions)]
+                    for i in range(num_actions):
+                        if prior == 'no prior' or last_layer_weights is None:
+                            cov = np.linalg.inv(phiphiT[i])
+                            mu = np.array(np.dot(cov,phiY[i]))
+                        elif prior == 'last layer':
+                            cov = np.linalg.inv(phiphiT[i])
+                            mu = np.array(np.dot(cov,(phiY[i] + (1/blr_params.sigma)*last_layer_weights[:,i])))
+                        elif prior == 'single sdp':
+                            cov = np.linalg.inv(phiphiT[i] + phiphiT0)
+                            mu = np.array(np.dot(cov,(phiY[i] + np.dot(phiphiT0, last_layer_weights[:,i]))))
+
+                        for j in range(num_models):
+                            w_sample[i, j] = np.random.multivariate_normal(mu, blr_params.sigma*cov)
+                    # w_norms = [np.linalg.norm(w_sample[i]) for i in range(num_actions)]
 
             if t > learning_starts and t % target_network_update_freq == 0:
                 # Update target network periodically.
