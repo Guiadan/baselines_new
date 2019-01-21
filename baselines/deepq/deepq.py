@@ -264,24 +264,19 @@ def BayesRegression(phiphiT, phiY, replay_buffer, dqn_feat, target_dqn_feat, num
     feat_dim = blr_param.feat_dim
 
     n_samples = blr_param.batch_size if len(replay_buffer) > blr_param.batch_size else len(replay_buffer)
-    if structred_learning:
-        s_idx = (replay_buffer._next_idx - n_samples) % len(replay_buffer)
-        if s_idx < replay_buffer._next_idx:
-            idxes = [idx for idx in range(s_idx,replay_buffer._next_idx)]
-        else:
-            idxes = [idx for idx in range(replay_buffer._next_idx)]
-            idxes.extend([idx for idx in range(s_idx,len(replay_buffer))])
-        obses_t, actions, rewards, obses_tp1, dones = replay_buffer.get_samples(idxes)
-    else:
-        # obses_t, actions, rewards, obses_tp1, dones = replay_buffer.sample(n_samples)
-        idxes = [i for i in range(len(replay_buffer))]
-        shuffle(idxes)
-        obses_t, actions, rewards, obses_tp1, dones = replay_buffer.get_samples(idxes[:n_samples])
 
+    # obses_t, actions, rewards, obses_tp1, dones = replay_buffer.sample(n_samples)
+    idxes = [i for i in range(len(replay_buffer))]
+    shuffle(idxes)
+    obses_t, actions, rewards, obses_tp1, dones = replay_buffer.get_samples(idxes[:n_samples])
+
+    phiphiT0 = None
     if prior == "no prior":
         print("no prior")
         phiY *= (1-blr_param.alpha)*0
         phiphiT *= (1-blr_param.alpha)*0
+        for i in range(num_actions):
+            phiphiT[i] = (1/blr_param.sigma)*np.eye(feat_dim)
     elif prior == "decay":
         print("simple prior")
         phiY *= (1-blr_param.alpha)
@@ -290,6 +285,8 @@ def BayesRegression(phiphiT, phiY, replay_buffer, dqn_feat, target_dqn_feat, num
         print("last layer weights only prior")
         phiY *= (1-blr_param.alpha)*0
         phiphiT *= (1-blr_param.alpha)*0
+        for i in range(num_actions):
+            phiphiT[i] = (1/blr_param.sigma)*np.eye(feat_dim)
     elif prior == "sdp":
         print("SDP prior")
         phiphiT0  = None
@@ -311,18 +308,12 @@ def BayesRegression(phiphiT, phiY, replay_buffer, dqn_feat, target_dqn_feat, num
         # phiphiT0 = 1/blr_param.sigma * np.eye(feat_dim)
         # phiphiT0 = None
         # if np.any(phiphiT != np.zeros_like(phiphiT)):
-        if blr_counter != 0:
-            print("using 600")
-            if structred_learning:
-                print('structured learning')
-                phiphiT0, _ = information_transfer_single(phiphiT, dqn_feat, target_dqn_feat, replay_buffer, 600      , num_actions, feat_dim, sdp_ops, old_networks, blr_counter, blr_idxes=idxes)
-            else:
-                phiphiT0, cov0 = information_transfer_single(phiphiT, dqn_feat, target_dqn_feat, replay_buffer, 600      , num_actions, feat_dim, sdp_ops, old_networks, blr_counter)
-            phiphiT *= (1-blr_param.alpha)*0
+        print("using 600")
+        phiphiT0, cov0 = information_transfer_single(phiphiT, dqn_feat, target_dqn_feat, replay_buffer, 600      , num_actions, feat_dim, sdp_ops, old_networks, blr_counter)
+        phiphiT *= (1-blr_param.alpha)*0
         phiY *= (1-blr_param.alpha)*0
 
     n = np.zeros(num_actions)
-    cov_norms = [0. for _ in range(num_actions)]
     action_rewards = [0. for _ in range(num_actions)]
 
     mini_batch_size = 32*num_actions
@@ -340,59 +331,61 @@ def BayesRegression(phiphiT, phiY, replay_buffer, dqn_feat, target_dqn_feat, num
                 continue
             phiphiTk, phiYk = blr_ops(obs_t[action == k], action[action == k], reward[action == k], obs_tp1[action == k], done[action == k])
             phiphiT[k] += phiphiTk
-            # shared_phiphiT += phiphiTk
             phiY[k] += phiYk
             n[k] += obs_t[action == k].shape[0]
             action_rewards[k] += sum(reward[action == k])
     print(n, np.sum(n))
-    for i in range(num_actions):
-        if prior == "sdp":# and phiphiT0 is not None:
-            if i == 0:
-                print("regular sdp")
-            if phiphiT0 is None:
-                inv = np.linalg.inv(phiphiT[i])
-                print("inv {}".format(i))
-                print(np.linalg.norm(inv))
-                w_mu[i] = np.array(np.dot(inv,phiY[i]))
-            else:
-                inv = np.linalg.inv(phiphiT[i] + phiphiT0[i])
-                w_mu[i] = np.array(np.dot(inv,(phiY[i] + np.dot(phiphiT0[i], last_layer_weights[:,i]))))
-                phiphiT[i] += phiphiT0[i]
+    return phiphiT, phiY, phiphiT0, last_layer_weights
 
-        elif prior == "single sdp":
-            # shared phiphiT0
-            if i == 0:
-                print("single sdp")
-            if blr_counter == 0:
-                inv = np.linalg.inv(phiphiT[i])
-                w_mu[i] = np.array(np.dot(inv,(phiY[i])))# + np.dot(phiphiT0, last_layer_weights[:,i]))))
-            else:
-                print("phiphiT[{}] phiphiT0".format([i]))
-                print([np.linalg.norm(phiphiT[i]), np.linalg.norm(phiphiT0)])
-                inv = np.linalg.inv(phiphiT[i] + phiphiT0)
-                w_mu[i] = np.array(np.dot(inv,(phiY[i]/blr_param.sigma_n + np.dot(phiphiT0, last_layer_weights[:,i]))))
-                phiphiT[i] += phiphiT0
-        elif prior == "last layer":
-            if i == 0:
-                print("last layer weights only prior")
-            inv = np.linalg.inv(phiphiT[i]/blr_param.sigma_n + 1/blr_param.sigma * np.eye(feat_dim))
-            w_mu[i] = np.array(np.dot(inv,(phiY[i]/blr_param.sigma_n + (1/blr_param.sigma)*last_layer_weights[:,i])))
-        else:
-            if i == 0:
-                print("prior: {}".format(prior))
-            inv = np.linalg.inv(phiphiT[i]/blr_param.sigma_n + 1/blr_param.sigma * np.eye(feat_dim))
-            w_mu[i] = np.array(np.dot(inv,phiY[i]))/blr_param.sigma_n
-
-        w_cov[i] = blr_param.sigma*inv
-        cov_norms[i] = np.linalg.norm(w_cov[i])
-    print("covariance matrices norms:")
-    print(cov_norms)
-    # print("reward gathered for actions")
-    # print(action_rewards)
+    # old BayesReg func
     # for i in range(num_actions):
-    #     print("phiphiT[{}] norm".format(i))
-    #     print(np.linalg.norm(phiphiT[i]))
-    return phiphiT, phiY, w_mu, w_cov
+    #     if prior == "sdp":# and phiphiT0 is not None:
+    #         if i == 0:
+    #             print("regular sdp")
+    #         if phiphiT0 is None:
+    #             inv = np.linalg.inv(phiphiT[i])
+    #             print("inv {}".format(i))
+    #             print(np.linalg.norm(inv))
+    #             w_mu[i] = np.array(np.dot(inv,phiY[i]))
+    #         else:
+    #             inv = np.linalg.inv(phiphiT[i] + phiphiT0[i])
+    #             w_mu[i] = np.array(np.dot(inv,(phiY[i] + np.dot(phiphiT0[i], last_layer_weights[:,i]))))
+    #             phiphiT[i] += phiphiT0[i]
+    #
+    #     elif prior == "single sdp":
+    #         # shared phiphiT0
+    #         if i == 0:
+    #             print("single sdp")
+    #         if blr_counter == 0:
+    #             inv = np.linalg.inv(phiphiT[i])
+    #             w_mu[i] = np.array(np.dot(inv,(phiY[i])))# + np.dot(phiphiT0, last_layer_weights[:,i]))))
+    #         else:
+    #             print("phiphiT[{}] phiphiT0".format([i]))
+    #             print([np.linalg.norm(phiphiT[i]), np.linalg.norm(phiphiT0)])
+    #             inv = np.linalg.inv(phiphiT[i] + phiphiT0)
+    #             w_mu[i] = np.array(np.dot(inv,(phiY[i]/blr_param.sigma_n + np.dot(phiphiT0, last_layer_weights[:,i]))))
+    #             phiphiT[i] += phiphiT0
+    #     elif prior == "last layer":
+    #         if i == 0:
+    #             print("last layer weights only prior")
+    #         inv = np.linalg.inv(phiphiT[i]/blr_param.sigma_n + 1/blr_param.sigma * np.eye(feat_dim))
+    #         w_mu[i] = np.array(np.dot(inv,(phiY[i]/blr_param.sigma_n + (1/blr_param.sigma)*last_layer_weights[:,i])))
+    #     else:
+    #         if i == 0:
+    #             print("prior: {}".format(prior))
+    #         inv = np.linalg.inv(phiphiT[i]/blr_param.sigma_n + 1/blr_param.sigma * np.eye(feat_dim))
+    #         w_mu[i] = np.array(np.dot(inv,phiY[i]))/blr_param.sigma_n
+    #
+    #     w_cov[i] = blr_param.sigma*inv
+    #     cov_norms[i] = np.linalg.norm(w_cov[i])
+    # print("covariance matrices norms:")
+    # print(cov_norms)
+    # # print("reward gathered for actions")
+    # # print(action_rewards)
+    # # for i in range(num_actions):
+    # #     print("phiphiT[{}] norm".format(i))
+    # #     print(np.linalg.norm(phiphiT[i]))
+    # return phiphiT, phiY, w_mu, w_cov
 
 class ActWrapper(object):
     def __init__(self, act, act_params):
@@ -632,6 +625,10 @@ def learn(env,
         phiY = np.zeros((num_actions, feat_dim))
         model_idx = np.random.randint(0,num_models,size=num_actions)
         w_norms = [np.linalg.norm(w_sample[i,model_idx[i]]) for i in range(num_actions)]
+        blr_ops = blr_additions['blr_ops']
+        blr_ops_old = blr_additions['blr_ops_old']
+        last_layer_weights = None
+        phiphiT0 = None
 
     # Initialize the parameters and copy them to the target network.
     U.initialize()
@@ -667,6 +664,8 @@ def learn(env,
         actions_hist_total = [0 for _ in range(num_actions)]
         last_layer_weights_decaying_average = None
         blr_counter = 0
+        action_buffers_size = 128
+        action_buffers = [ReplayBuffer(action_buffers_size) for _ in range(num_actions)]
         for t in tqdm(range(total_timesteps)):
 
             if callback is not None:
@@ -694,8 +693,18 @@ def learn(env,
                     # print(actions_hist)
                     actions_hist = [0. for _ in range(num_actions)]
                     for i in range(num_actions):
+                        if prior == 'no prior' or last_layer_weights is None:
+                            cov = np.linalg.inv(phiphiT[i])
+                            mu = np.array(np.dot(cov,phiY[i]))
+                        elif prior == 'last layer':
+                            cov = np.linalg.inv(phiphiT[i])
+                            mu = np.array(np.dot(cov,(phiY[i] + (1/blr_params.sigma)*last_layer_weights[:,i])))
+                        elif prior == 'single sdp':
+                            cov = np.linalg.inv(phiphiT[i] + phiphiT0)
+                            mu = np.array(np.dot(cov,(phiY[i] + np.dot(phiphiT0, last_layer_weights[:,i]))))
+
                         for j in range(num_models):
-                            w_sample[i, j] = np.random.multivariate_normal(w_mu[i], w_cov[i])
+                            w_sample[i, j] = np.random.multivariate_normal(mu, blr_params.sigma*cov)
                     # w_norms = [np.linalg.norm(w_sample[i]) for i in range(num_actions)]
 
             if thompson:
@@ -716,8 +725,13 @@ def learn(env,
             rew = np.sign(unclipped_rew)
             # Store transition in the replay buffer.
             replay_buffer.add(obs, action, rew, new_obs, float(done))
+            action_buffers[action].add(obs, action, rew, new_obs, float(done))
+            if action_buffers[action]._next_idx == 0:
+                obses_a, actions_a, rewards_a, obses_tp1_a, dones_a = replay_buffer.get_samples([i for i in range(action_buffers_size)])
+                phiphiT_a, phiY_a = blr_ops_old(obses_a, actions_a, rewards_a, obses_tp1_a, dones_a)
+                phiphiT[action] += phiphiT_a
+                phiY[action] += phiY_a
             obs = new_obs
-
             episode_rewards[-1] += rew
             # episode_Q_estimates[-1] += estimate
             unclipped_episode_rewards[-1] += unclipped_rew
@@ -758,7 +772,7 @@ def learn(env,
                     else:
                         print("last layer weights regular")
                         llw = sess.run(blr_additions['last_layer_weights'])
-                    phiphiT, phiY, w_mu, w_cov = BayesRegression(phiphiT,phiY,replay_buffer,
+                    phiphiT, phiY, phiphiT0, last_layer_weights = BayesRegression(phiphiT,phiY,replay_buffer,
                                                                  blr_additions['feature_extractor'],
                                                                  blr_additions['target_feature_extractor'], num_actions,
                                                                  blr_params,w_mu, w_cov,

@@ -568,6 +568,9 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
                 phiphiT_inv = tf.placeholder(tf.float32, [None] + [feat_dim, feat_dim], name="phiphiT_inv")
                 pseudo_count = tf.reduce_sum(tf.matmul(tf.matmul(tf.expand_dims(phi_old,axis=1), phiphiT_inv),tf.expand_dims(phi_old, axis=-1)),axis=[1,2])
 
+                phiphiTold_op = tf.matmul(tf.transpose(phi_old), phi_old)
+                phiYold_op = tf.squeeze(tf.matmul(tf.expand_dims(q_t_selected_target,0), phi_old))
+
                 sdp_ops = U.function(
                     inputs=[
                         obs_t_input,
@@ -592,7 +595,17 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
                 ],
                 outputs=[phiphiTop,phiYop]
             )
-
+            blr_ops_old = U.function(
+                inputs=[
+                    obs_t_input,
+                    act_t_ph,
+                    rew_t_ph,
+                    obs_tp1_input,
+                    done_mask_ph,
+                    importance_weights_ph
+                ],
+                outputs=[phiphiTold_op, phiYold_op]
+            )
             old_q_func_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=tf.get_variable_scope().name + "/old_q_func")
             update_old_expr = []
             for var, var_old in zip(sorted(q_func_vars, key=lambda v: v.name),
@@ -607,6 +620,7 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
                 'feature_extractor': feat,
                 'target_feature_extractor': feat_target,
                 'blr_ops': blr_ops,
+                'blr_ops_old': blr_ops_old,
                 'last_layer_weights': last_layer_weights,
                 'update_old': update_old,
                 'old_feature_extractor': feat_old,
