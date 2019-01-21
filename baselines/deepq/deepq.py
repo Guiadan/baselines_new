@@ -738,21 +738,8 @@ def learn(env,
                     replay_buffer.update_priorities(batch_idxes, new_priorities)
 
             if thompson:
-                if t > learning_starts and t % target_network_update_freq == 0:
-                    if last_layer_weights_decaying_average is None:
-                        last_layer_weights_decaying_average = sess.run(blr_additions['last_layer_weights'])
-                    else:
-                        last_layer_weights_decaying_average *= 0.99
-                        last_layer_weights_decaying_average += sess.run(blr_additions['last_layer_weights'])
-
                 if t > learning_starts and t % (blr_params.update_w*target_network_update_freq) == 0:
-                    ADQN_prior = False # average dqn
-                    if ADQN_prior:
-                        print("last layer weights decaying average")
-                        llw = last_layer_weights_decaying_average
-                    else:
-                        print("last layer weights regular")
-                        llw = sess.run(blr_additions['last_layer_weights'])
+                    llw = sess.run(blr_additions['last_layer_weights'])
                     phiphiT, phiY, phiphiT0, last_layer_weights = BayesRegression(phiphiT,phiY,replay_buffer,
                                                                  blr_additions['feature_extractor'],
                                                                  blr_additions['target_feature_extractor'], num_actions,
