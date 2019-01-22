@@ -55,6 +55,7 @@ def information_transfer_new(phiphiT, dqn_feat, target_dqn_feat, replay_buffer, 
     from datetime import datetime
     fmt = '%Y-%m-%d %H:%M:%S'
     d1 = datetime.now()
+    information_transfer_single.calls += 1
 
     phiphiT_inv = np.zeros_like(phiphiT)
     print("phiphiT inv")
