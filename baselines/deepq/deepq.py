@@ -33,10 +33,11 @@ class BLRParams(object):
         self.sigma = 0.001 #0.001 W prior variance
         self.sigma_n = 1 # noise variance
         self.alpha = .01 # forgetting factor
-        self.sample_w = 10000
         if debug_flag:
             self.update_w = 1 # multiplied by update target frequency
+            self.sample_w = 1000
         else:
+            self.sample_w = 10000
             self.update_w = 10 # multiplied by update target frequency
         self.batch_size = 1000000# batch size to do blr from
         self.gamma = 0.99 #dqn gamma
@@ -116,7 +117,6 @@ def information_transfer_new(phiphiT, dqn_feat, target_dqn_feat, replay_buffer, 
     d2 = datetime.now()
     print("total time for information transfer:")
     print(d2.minute - d1.minute + (d2.hour-d1.hour) * 60)
-    print(d2.minute - d1.minute + (d2.hour-d1.hour) * 60)
     print("current call:")
     print(information_transfer_new.calls)
     print('total success:')
@@ -131,6 +131,45 @@ information_transfer_new.failure_num = 0
 information_transfer_new.calls = 0
 information_transfer_new.last_success = 0
 
+def information_transfer_linear(phiphiT, dqn_feat, old_feat, num_actions, feat_dim,replay_buffer):
+    idxes = [i for i in range(len(replay_buffer))]
+    obses_t, actions, rewards, obses_tp1, dones = replay_buffer.get_samples(idxes)
+    obses_t_per_a, actions_per_a, rewards_per_a, obses_tp1_per_a, dones_per_a = [], [], [], [], []
+    idxes_per_a = []
+    d1 = datetime.now()
+    for i in range(num_actions):
+        obses_t_per_a.append(obses_t[actions == i])
+        actions_per_a.append(actions[actions == i])
+        rewards_per_a.append(rewards[actions == i])
+        obses_tp1_per_a.append(obses_tp1[actions == i])
+        dones_per_a.append(dones[actions == i])
+        ix = [j for j in range(obses_t[actions == i].shape[0])]
+        shuffle(ix)
+        idxes_per_a.append(ix)
+    phiphiT0 = np.zeros_like(phiphiT)
+    for i in range(num_actions):
+        phi_m = None
+        xi_m = None
+        mi = obses_t_per_a[i].shape[0]
+        M = min([1000, mi])
+        for m in range(M):
+            phi_t = old_feat(obses_t_per_a[i][idxes_per_a[i][m]][None]).T
+            xi_t = dqn_feat(obses_t_per_a[i][idxes_per_a[i][m]][None]).T
+            if phi_m is None:
+                phi_m = phi_t
+            else:
+                phi_m = np.concatenate([phi_m,phi_t],axis=-1)
+            if xi_m is None:
+                xi_m = xi_t
+            else:
+                xi_m = np.concatenate([xi_m, xi_t],axis=-1)
+        phiphiT0[i] = (xi_m @ np.linalg.pinv(phi_m)) @ phiphiT[i] @ (np.linalg.pinv(phi_m).T @ xi_m.T) + 1/0.001 * np.eye(feat_dim)
+
+    d2 = datetime.now()
+    print("total time for linear prior")
+    print(d2.minute - d1.minute + (d2.hour-d1.hour) * 60)
+    return phiphiT0
+
 def information_transfer_single(phiphiT, dqn_feat, target_dqn_feat,
                                 replay_buffer, batch_size, num_actions, feat_dim,
                                 sdp_ops, old_networks, blr_counter, blr_idxes=[]):
@@ -143,7 +182,6 @@ def information_transfer_single(phiphiT, dqn_feat, target_dqn_feat,
     d1 = datetime.now()
     information_transfer_single.calls += 1
     idxes = [i for i in range(len(replay_buffer))]
-    # shuffle(idxes)
     obses_t, actions, rewards, obses_tp1, dones = replay_buffer.get_samples(idxes)
     obses_t_per_a, actions_per_a, rewards_per_a, obses_tp1_per_a, dones_per_a = [], [], [], [], []
     idxes_per_a = []
@@ -304,7 +342,7 @@ def information_transfer(phiphiT, dqn_feat, target_dqn_feat, replay_buffer, batc
     return precisions_return, cov
 
 def BayesRegression(phiphiT, phiY, replay_buffer, dqn_feat, target_dqn_feat, num_actions, blr_param,
-                    w_mu, w_cov, last_layer_weights, prior="sdp", blr_ops=None, sdp_ops=None, old_networks=None, blr_counter=None):
+                    w_mu, w_cov, last_layer_weights, prior="sdp", blr_ops=None, sdp_ops=None, old_networks=None, blr_counter=None,old_feat=None):
     # dqn_ and target_dqn_ are feature extractors for the dqn and target dqn respectivley
     # in the neural linear settings target are the old features and dqn are the new features
     # last_layer_weights are the target last layer weights
@@ -315,7 +353,6 @@ def BayesRegression(phiphiT, phiY, replay_buffer, dqn_feat, target_dqn_feat, num
     # obses_t, actions, rewards, obses_tp1, dones = replay_buffer.sample(n_samples)
     idxes = [i for i in range(len(replay_buffer))]
     shuffle(idxes)
-    obses_t, actions, rewards, obses_tp1, dones = replay_buffer.get_samples(idxes[:n_samples])
 
     phiphiT0 = None
     if prior == "no prior":
@@ -324,6 +361,11 @@ def BayesRegression(phiphiT, phiY, replay_buffer, dqn_feat, target_dqn_feat, num
         phiphiT *= (1-blr_param.alpha)*0
         for i in range(num_actions):
             phiphiT[i] = (1/blr_param.sigma)*np.eye(feat_dim)
+    elif prior == "linear":
+        print("linear")
+        phiphiT0 = information_transfer_linear(phiphiT, dqn_feat, old_feat,num_actions,feat_dim, replay_buffer)
+        phiphiT *= (1-blr_param.alpha)*0
+        phiY *= (1-blr_param.alpha)*0
     elif prior == "decay":
         print("simple prior")
         phiY *= (1-blr_param.alpha)
@@ -354,6 +396,7 @@ def BayesRegression(phiphiT, phiY, replay_buffer, dqn_feat, target_dqn_feat, num
         phiphiT *= (1-blr_param.alpha)*0
         phiY *= (1-blr_param.alpha)*0
 
+    obses_t, actions, rewards, obses_tp1, dones = replay_buffer.get_samples(idxes[:n_samples])
     n = np.zeros(num_actions)
     action_rewards = [0. for _ in range(num_actions)]
 
@@ -789,7 +832,7 @@ def learn(env,
                                                                  prior=prior, blr_ops=blr_additions['blr_ops'],
                                                                  sdp_ops=blr_additions['sdp_ops'],
                                                                  old_networks=blr_additions['old_networks'],
-                                                                 blr_counter=blr_counter)
+                                                                 blr_counter=blr_counter, old_feat=blr_additions['old_feature_extractor'])
                     if seed is not None:
                         print('seed is {}'.format(seed))
                     blr_additions['update_old']()
@@ -816,10 +859,19 @@ def learn(env,
                             cov = np.linalg.inv(phiphiT[i])
                             mu = np.array(np.dot(cov,(phiY[i] + (1/blr_params.sigma)*last_layer_weights[:,i])))
                         elif prior == 'single sdp':
-                            cov = np.linalg.inv(phiphiT[i] + phiphiT0)
+                            try:
+                                cov = np.linalg.inv(phiphiT[i] + phiphiT0)
+                            except:
+                                print("singular matrix using pseudo inverse")
+                                cov = np.linalg.pinv(phiphiT[i] + phiphiT0)
                             mu = np.array(np.dot(cov,(phiY[i] + np.dot(phiphiT0, last_layer_weights[:,i]))))
-                        elif prior == 'sdp':
-                            cov = np.linalg.inv(phiphiT[i] + phiphiT0[i])
+                        elif prior == 'sdp' or prior == 'linear':
+                            print(prior)
+                            try:
+                                cov = np.linalg.inv(phiphiT[i] + phiphiT0[i])
+                            except:
+                                print("singular matrix")
+                                cov = np.linalg.pinv(phiphiT[i] + phiphiT0[i])
                             mu = np.array(np.dot(cov,(phiY[i] + np.dot(phiphiT0[i], last_layer_weights[:,i]))))
                         else:
                             print("No valid prior")
