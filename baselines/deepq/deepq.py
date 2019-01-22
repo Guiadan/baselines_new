@@ -59,9 +59,9 @@ def information_transfer_new(phiphiT, dqn_feat, target_dqn_feat, replay_buffer, 
     phiphiT_inv = np.zeros_like(phiphiT)
     print("phiphiT inv")
     for i in range(num_actions):
-        phiphiT_inv[i] = np.linalg.inv(phiphiT[i])
-        print("inverse norm {}".format(i))
-        print(np.linalg.norm(phiphiT_inv[i]))
+        phiphiT_inv[i] = np.linalg.pinv(phiphiT[i])
+        # print("inverse norm {}".format(i))
+        # print(np.linalg.norm(phiphiT_inv[i]))
 
     idxes = [i for i in range(len(replay_buffer))]
     shuffle(idxes)
@@ -102,9 +102,12 @@ def information_transfer_new(phiphiT, dqn_feat, target_dqn_feat, replay_buffer, 
                 print("failed - cvxpy couldn't solve sdp")
                 precisions_return.append(np.linalg.inv(prior))
                 cov.append(prior)
+                information_transfer_new.failure_num += 1
             else:
                 precisions_return.append(np.linalg.inv(X.value + prior))
                 cov.append(X.value + prior)
+                information_transfer_new.success_num += 1
+                information_transfer_new.last_success = information_transfer_new.calls
         else:
             print("failed - no samples")
             precisions_return.append(np.linalg.inv(prior))
@@ -113,7 +116,19 @@ def information_transfer_new(phiphiT, dqn_feat, target_dqn_feat, replay_buffer, 
     print("total time for information transfer:")
     print(d2.minute - d1.minute + (d2.hour-d1.hour) * 60)
     print(d2.minute - d1.minute + (d2.hour-d1.hour) * 60)
+    print("current call:")
+    print(information_transfer_new.calls)
+    print('total success:')
+    print(information_transfer_new.success_num)
+    print('total failure:')
+    print(information_transfer_new.failure_num)
+    print('last success on:')
+    print(information_transfer_new.last_success)
     return precisions_return, cov
+information_transfer_new.success_num = 0
+information_transfer_new.failure_num = 0
+information_transfer_new.calls = 0
+information_transfer_new.last_success = 0
 
 def information_transfer_single(phiphiT, dqn_feat, target_dqn_feat,
                                 replay_buffer, batch_size, num_actions, feat_dim,
@@ -289,19 +304,13 @@ def BayesRegression(phiphiT, phiY, replay_buffer, dqn_feat, target_dqn_feat, num
             phiphiT[i] = (1/blr_param.sigma)*np.eye(feat_dim)
     elif prior == "sdp":
         print("SDP prior")
-        phiphiT0  = None
-        # if np.any(phiphiT != np.zeros_like(phiphiT)):
-        if blr_counter != 0:
-            for j in range(num_actions):
-                print("old phiphiT[{}] norm:".format(j))
-                print(np.linalg.norm(phiphiT[j]))
-            phiphiT0, cov0 = information_transfer_new(phiphiT, dqn_feat, target_dqn_feat, replay_buffer, 300*num_actions      , num_actions, feat_dim, sdp_ops)
-            for j in range(num_actions):
-                print("old phiphiT[{}] new features norm:".format(j))
-                print(np.linalg.norm(phiphiT0[j]))
-                print("old cov0[{}] new features norm:".format(j))
-                print(np.linalg.norm(cov0[j]))
-            phiphiT *= (1-blr_param.alpha)*0
+        phiphiT0, cov0 = information_transfer_new(phiphiT, dqn_feat, target_dqn_feat, replay_buffer, 300*num_actions      , num_actions, feat_dim, sdp_ops)
+        for j in range(num_actions):
+            print("old phiphiT[{}] new features norm:".format(j))
+            print(np.linalg.norm(phiphiT0[j]))
+            print("old cov0[{}] new features norm:".format(j))
+            print(np.linalg.norm(cov0[j]))
+        phiphiT *= (1-blr_param.alpha)*0
         phiY *= (1-blr_param.alpha)*0
     elif prior == "single sdp":
         print("single SDP prior")
@@ -777,6 +786,13 @@ def learn(env,
                         elif prior == 'single sdp':
                             cov = np.linalg.inv(phiphiT[i] + phiphiT0)
                             mu = np.array(np.dot(cov,(phiY[i] + np.dot(phiphiT0, last_layer_weights[:,i]))))
+                        elif prior == 'sdp':
+                            cov = np.linalg.inv(phiphiT[i] + phiphiT0[i])
+                            mu = np.array(np.dot(cov,(phiY[i] + np.dot(phiphiT0[i], last_layer_weights[:,i]))))
+                        else:
+                            print("No valid prior")
+                            exit(0)
+
 
                         for j in range(num_models):
                             w_sample[i, j] = np.random.multivariate_normal(mu, blr_params.sigma*cov)
