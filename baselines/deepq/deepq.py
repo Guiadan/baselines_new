@@ -55,7 +55,7 @@ def information_transfer_new(phiphiT, dqn_feat, target_dqn_feat, replay_buffer, 
     from datetime import datetime
     fmt = '%Y-%m-%d %H:%M:%S'
     d1 = datetime.now()
-    information_transfer_single.calls += 1
+    information_transfer_new.calls += 1
 
     phiphiT_inv = np.zeros_like(phiphiT)
     print("phiphiT inv")
@@ -143,9 +143,22 @@ def information_transfer_single(phiphiT, dqn_feat, target_dqn_feat,
     d1 = datetime.now()
     information_transfer_single.calls += 1
     idxes = [i for i in range(len(replay_buffer))]
-    shuffle(idxes)
-    obses_t, actions, rewards, obses_tp1, dones = replay_buffer.get_samples(idxes[:batch_size])
+    # shuffle(idxes)
+    obses_t, actions, rewards, obses_tp1, dones = replay_buffer.get_samples(idxes)
+    obses_t_per_a, actions_per_a, rewards_per_a, obses_tp1_per_a, dones_per_a = [], [], [], [], []
+    idxes_per_a = []
+    for i in range(num_actions):
+        obses_t_per_a.append(obses_t[actions == i])
+        actions_per_a.append(actions[actions == i])
+        rewards_per_a.append(rewards[actions == i])
+        obses_tp1_per_a.append(obses_tp1[actions == i])
+        dones_per_a.append(dones[actions == i])
+        ix = [j for j in range(obses_t[actions == i].shape[0])]
+        shuffle(ix)
+        idxes_per_a.append(ix)
     # obses_t, actions, rewards, obses_tp1, dones = replay_buffer.sample(batch_size)
+
+    """
     mini_batch_size = 32*num_actions
     for j in tqdm(range((batch_size // mini_batch_size)+1)):
         # obs_t, action, reward, obs_tp1, done = obses_t[j], actions[j], rewards[j], obses_tp1[j], dones[j]
@@ -165,7 +178,25 @@ def information_transfer_single(phiphiT, dqn_feat, target_dqn_feat,
             d.extend(pseudo_count_k)
             phi.extend(outer_k)
             pass
+    """
 
+    for k in range(num_actions):
+        if obses_t_per_a[k].shape[0] < 1:
+            continue
+        nk = obses_t_per_a[k].shape[0]
+        nk = min([50,nk])
+        idxes = idxes_per_a[k][:nk]
+        pseudo_count_k, outer_k = sdp_ops(obses_t_per_a[k][idxes], obses_t_per_a[k][idxes], np.tile(phiphiT_inv[k],(nk,1,1)))
+
+
+        outer_k = [np.array(p) for p in outer_k.tolist()]
+        pseudo_count_k = pseudo_count_k.tolist()
+        d.extend(pseudo_count_k)
+        phi.extend(outer_k)
+        pass
+
+    print("len d")
+    print(len(d))
     prior = 0.00001 * np.eye(feat_dim)
     precisions_return = np.linalg.inv(prior)
     cov = prior
