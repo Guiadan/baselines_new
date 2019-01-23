@@ -132,7 +132,8 @@ information_transfer_new.calls = 0
 information_transfer_new.last_success = 0
 
 def information_transfer_linear(phiphiT, dqn_feat, old_feat, num_actions, feat_dim,replay_buffer):
-    idxes = [i for i in range(len(replay_buffer))]
+    n_samples = min([300000, len(replay_buffer)])
+    idxes = [i for i in range(n_samples)]
     obses_t, actions, rewards, obses_tp1, dones = replay_buffer.get_samples(idxes)
     obses_t_per_a, actions_per_a, rewards_per_a, obses_tp1_per_a, dones_per_a = [], [], [], [], []
     idxes_per_a = []
