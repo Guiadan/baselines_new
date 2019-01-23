@@ -152,6 +152,9 @@ def information_transfer_linear(phiphiT, dqn_feat, old_feat, num_actions, feat_d
         xi_m = None
         mi = obses_t_per_a[i].shape[0]
         M = min([1000, mi])
+        if M < feat_dim:
+            phiphiT0[i] = 1/0.001 * np.eye(feat_dim)
+            continue
         for m in range(M):
             phi_t = old_feat(obses_t_per_a[i][idxes_per_a[i][m]][None]).T
             xi_t = dqn_feat(obses_t_per_a[i][idxes_per_a[i][m]][None]).T
@@ -879,7 +882,10 @@ def learn(env,
 
 
                         for j in range(num_models):
-                            w_sample[i, j] = np.random.multivariate_normal(mu, blr_params.sigma*cov)
+                            try:
+                                w_sample[i, j] = np.random.multivariate_normal(mu, blr_params.sigma*cov)
+                            except:
+                                w_sample[i, j] = mu
                     # w_norms = [np.linalg.norm(w_sample[i]) for i in range(num_actions)]
 
             if t > learning_starts and t % target_network_update_freq == 0:
