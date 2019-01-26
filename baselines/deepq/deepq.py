@@ -280,9 +280,11 @@ def learn(env,
             w_cov[i] = blr_params.sigma*np.eye(feat_dim)
 
         phiphiT = np.zeros((num_actions,feat_dim,feat_dim))
+        phiphiT_inv = np.zeros((num_actions,feat_dim,feat_dim))
         for i in range(num_actions):
             phiphiT[i] = (1/blr_params.sigma)*np.eye(feat_dim)
-        old_phiphiT_inv = [np.linalg.pinv(phiphiT) for i in range(5)]
+            phiphiT_inv[i] = blr_params.sigma*np.eye(feat_dim)
+        old_phiphiT_inv = [phiphiT_inv for i in range(5)]
 
         phiY = np.zeros((num_actions, feat_dim))
         model_idx = np.random.randint(0,num_models,size=num_actions)
@@ -449,7 +451,13 @@ def learn(env,
 
             if thompson:
                 if t > learning_starts and t % (blr_params.update_w*target_network_update_freq) == 0:
-                    old_phiphiT_inv[blr_counter % 5] = np.linalg.pinv(phiphiT)
+                    phiphiT_inv = np.zeros_like(phiphiT)
+                    for i in range(num_actions):
+                        try:
+                            phiphiT_inv[i] = np.linalg.inv(phiphiT[i])
+                        except:
+                            phiphiT_inv[i] = np.linalg.pinv(phiphiT[i])
+                    old_phiphiT_inv[blr_counter % 5] = phiphiT_inv
                     llw = sess.run(blr_additions['last_layer_weights'])
                     phiphiT, phiY, phiphiT0, last_layer_weights = BayesRegression(phiphiT,phiY,replay_buffer,
                                                                  blr_additions['feature_extractor'],
