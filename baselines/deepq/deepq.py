@@ -18,12 +18,10 @@ from baselines.deepq.utils import ObservationInput
 
 from baselines.common.tf_util import get_session
 from baselines.deepq.models import build_q_func, build_q_func_and_features
+from baselines.deepq.thompson_utils import BayesRegression
 
 #additions
 from tqdm import tqdm
-import cvxpy as cvx
-from datetime import datetime
-from random import shuffle
 debug_flag = False
 structred_learning = False
 first_time = True
@@ -48,432 +46,6 @@ class BLRParams(object):
         self.b0 = 6
 
 
-def information_transfer_new(phiphiT, dqn_feat, target_dqn_feat, replay_buffer, batch_size, num_actions, feat_dim, sdp_ops):
-    d = [[] for i in range(num_actions)]
-    phi = [[] for i in range(num_actions)]
-    n = [0 for i in range(num_actions)]
-    print("transforming information")
-    from datetime import datetime
-    fmt = '%Y-%m-%d %H:%M:%S'
-    d1 = datetime.now()
-    information_transfer_new.calls += 1
-
-    phiphiT_inv = np.zeros_like(phiphiT)
-    print("phiphiT inv")
-    for i in range(num_actions):
-        phiphiT_inv[i] = np.linalg.pinv(phiphiT[i])
-        # print("inverse norm {}".format(i))
-        # print(np.linalg.norm(phiphiT_inv[i]))
-
-    idxes = [i for i in range(len(replay_buffer))]
-    shuffle(idxes)
-    obses_t, actions, rewards, obses_tp1, dones = replay_buffer.get_samples(idxes[:batch_size])
-    # obses_t, actions, rewards, obses_tp1, dones = replay_buffer.sample(batch_size)
-    mini_batch_size = 32*num_actions
-    for j in tqdm(range((batch_size // mini_batch_size)+1)):
-        # obs_t, action, reward, obs_tp1, done = obses_t[j], actions[j], rewards[j], obses_tp1[j], dones[j]
-        start_idx = j*mini_batch_size
-        end_idx = (j+1)*mini_batch_size if (j+1)*mini_batch_size < len(replay_buffer) else -1
-        obs_t = obses_t[start_idx:end_idx]
-        action = actions[start_idx:end_idx]
-        for k in range(num_actions):
-            if obs_t[action == k].shape[0] < 1:
-                continue
-            nk = obs_t[action == k].shape[0]
-            pseudo_count_k, outer_k = sdp_ops(obs_t[action == k], obs_t[action == k], np.tile(phiphiT_inv[k],(nk,1,1)))
-            outer_k = [np.array(p) for p in outer_k.tolist()]
-            pseudo_count_k = pseudo_count_k.tolist()
-            d[k].extend(pseudo_count_k)
-            phi[k].extend(outer_k)
-            n[k] += nk
-
-    precisions_return = []
-    cov = []
-    prior = 0.00001 * np.eye(feat_dim)
-    print("solving optimization")
-    for a in range(num_actions):
-        print("for action {}".format(a))
-        if d[a] != []:
-            X = cvx.Variable((feat_dim, feat_dim), PSD=True)
-            # Form objective.
-            obj = cvx.Minimize(sum([(cvx.trace(X * phi[a][i]) - np.squeeze(d[a][i])) ** 2 for i in range(len(d[a]))]))
-            prob = cvx.Problem(obj)
-            prob.solve(solver=cvx.SUPER_SCS)
-            # prob.solve()
-            if X.value is None:
-                print("failed - cvxpy couldn't solve sdp")
-                precisions_return.append(np.linalg.inv(prior))
-                cov.append(prior)
-                information_transfer_new.failure_num += 1
-            else:
-                precisions_return.append(np.linalg.inv(X.value + prior))
-                cov.append(X.value + prior)
-                information_transfer_new.success_num += 1
-                information_transfer_new.last_success = information_transfer_new.calls
-        else:
-            print("failed - no samples")
-            precisions_return.append(np.linalg.inv(prior))
-            cov.append(prior)
-    d2 = datetime.now()
-    print("total time for information transfer:")
-    print(d2.minute - d1.minute + (d2.hour-d1.hour) * 60)
-    print("current call:")
-    print(information_transfer_new.calls)
-    print('total success:')
-    print(information_transfer_new.success_num)
-    print('total failure:')
-    print(information_transfer_new.failure_num)
-    print('last success on:')
-    print(information_transfer_new.last_success)
-    return precisions_return, cov
-information_transfer_new.success_num = 0
-information_transfer_new.failure_num = 0
-information_transfer_new.calls = 0
-information_transfer_new.last_success = 0
-
-def information_transfer_linear(phiphiT, dqn_feat, old_feat, num_actions, feat_dim,replay_buffer):
-    n_samples = min([300000, len(replay_buffer)])
-    idxes = [i for i in range(n_samples)]
-    obses_t, actions, rewards, obses_tp1, dones = replay_buffer.get_samples(idxes)
-    obses_t_per_a, actions_per_a, rewards_per_a, obses_tp1_per_a, dones_per_a = [], [], [], [], []
-    idxes_per_a = []
-    d1 = datetime.now()
-    for i in range(num_actions):
-        obses_t_per_a.append(obses_t[actions == i])
-        actions_per_a.append(actions[actions == i])
-        rewards_per_a.append(rewards[actions == i])
-        obses_tp1_per_a.append(obses_tp1[actions == i])
-        dones_per_a.append(dones[actions == i])
-        ix = [j for j in range(obses_t[actions == i].shape[0])]
-        shuffle(ix)
-        idxes_per_a.append(ix)
-    phiphiT0 = np.zeros_like(phiphiT)
-    for i in range(num_actions):
-        phi_m = None
-        xi_m = None
-        mi = obses_t_per_a[i].shape[0]
-        M = min([1000, mi])
-        if M < feat_dim:
-            phiphiT0[i] = 1/0.001 * np.eye(feat_dim)
-            continue
-        for m in range(M):
-            phi_t = old_feat(obses_t_per_a[i][idxes_per_a[i][m]][None]).T
-            xi_t = dqn_feat(obses_t_per_a[i][idxes_per_a[i][m]][None]).T
-            if phi_m is None:
-                phi_m = phi_t
-            else:
-                phi_m = np.concatenate([phi_m,phi_t],axis=-1)
-            if xi_m is None:
-                xi_m = xi_t
-            else:
-                xi_m = np.concatenate([xi_m, xi_t],axis=-1)
-        phiphiT0[i] = (xi_m @ np.linalg.pinv(phi_m)) @ phiphiT[i] @ (np.linalg.pinv(phi_m).T @ xi_m.T) + 1/0.001 * np.eye(feat_dim)
-
-    d2 = datetime.now()
-    print("total time for linear prior")
-    print(d2.minute - d1.minute + (d2.hour-d1.hour) * 60)
-    return phiphiT0
-
-def information_transfer_single(phiphiT, dqn_feat, target_dqn_feat,
-                                replay_buffer, batch_size, num_actions, feat_dim,
-                                sdp_ops, old_networks, blr_counter, blr_idxes=[]):
-    blr_params = BLRParams()
-    phiphiT_inv = np.zeros_like(phiphiT)
-    for i in range(num_actions):
-        phiphiT_inv[i] = np.linalg.pinv(phiphiT[i])
-    d = []
-    phi = []
-    d1 = datetime.now()
-    information_transfer_single.calls += 1
-    idxes = [i for i in range(len(replay_buffer))]
-    obses_t, actions, rewards, obses_tp1, dones = replay_buffer.get_samples(idxes)
-    obses_t_per_a, actions_per_a, rewards_per_a, obses_tp1_per_a, dones_per_a = [], [], [], [], []
-    idxes_per_a = []
-    for i in range(num_actions):
-        obses_t_per_a.append(obses_t[actions == i])
-        actions_per_a.append(actions[actions == i])
-        rewards_per_a.append(rewards[actions == i])
-        obses_tp1_per_a.append(obses_tp1[actions == i])
-        dones_per_a.append(dones[actions == i])
-        ix = [j for j in range(obses_t[actions == i].shape[0])]
-        shuffle(ix)
-        idxes_per_a.append(ix)
-    # obses_t, actions, rewards, obses_tp1, dones = replay_buffer.sample(batch_size)
-
-    """
-    mini_batch_size = 32*num_actions
-    for j in tqdm(range((batch_size // mini_batch_size)+1)):
-        # obs_t, action, reward, obs_tp1, done = obses_t[j], actions[j], rewards[j], obses_tp1[j], dones[j]
-        start_idx = j*mini_batch_size
-        end_idx = (j+1)*mini_batch_size if (j+1)*mini_batch_size < len(replay_buffer) else -1
-        obs_t = obses_t[start_idx:end_idx]
-        action = actions[start_idx:end_idx]
-        for k in range(num_actions):
-            if obs_t[action == k].shape[0] < 1:
-                continue
-            nk = obs_t[action == k].shape[0]
-
-            pseudo_count_k, outer_k = sdp_ops(obs_t[action == k], obs_t[action == k], np.tile(phiphiT_inv[k],(nk,1,1)))
-
-            outer_k = [np.array(p) for p in outer_k.tolist()]
-            pseudo_count_k = pseudo_count_k.tolist()
-            d.extend(pseudo_count_k)
-            phi.extend(outer_k)
-            pass
-    """
-
-    for k in range(num_actions):
-        if obses_t_per_a[k].shape[0] < 1:
-            continue
-        nk = obses_t_per_a[k].shape[0]
-        nk = min([50,nk])
-        idxes = idxes_per_a[k][:nk]
-        pseudo_count_k, outer_k = sdp_ops(obses_t_per_a[k][idxes], obses_t_per_a[k][idxes], np.tile(phiphiT_inv[k],(nk,1,1)))
-
-
-        outer_k = [np.array(p) for p in outer_k.tolist()]
-        pseudo_count_k = pseudo_count_k.tolist()
-        d.extend(pseudo_count_k)
-        phi.extend(outer_k)
-        pass
-
-    print("len d")
-    print(len(d))
-    prior = 0.00001 * np.eye(feat_dim)
-    precisions_return = np.linalg.inv(prior)
-    cov = prior
-    print("solving optimization")
-    if d != []:
-        X = cvx.Variable((feat_dim, feat_dim), PSD=True)
-        # Form objective.
-        obj = cvx.Minimize(sum([(cvx.trace(X * phi[i]) - np.squeeze(d[i])) ** 2 for i in range(len(d))]))
-        prob = cvx.Problem(obj)
-        prob.solve(solver=cvx.SUPER_SCS)
-        if X.value is None:
-            print("failed - cvxpy couldn't solve sdp")
-            information_transfer_single.failure_num += 1
-        else:
-            information_transfer_single.success_num += 1
-            information_transfer_single.last_success = information_transfer_single.calls
-            # when solving for phiphiT
-            # precisions_return = X.value #+ np.linalg.inv(prior)
-            # cov = np.linalg.inv(X.value + np.linalg.inv(prior))
-            #when solving for phiphiT_inv
-            cov = X.value + prior
-            precisions_return = np.linalg.inv(X.value + prior)
-            # print('phiphiT0 norm')
-            # print(np.linalg.norm(X.value + np.linalg.inv(prior)))
-            # print('cov norm')
-            # print(np.linalg.norm(cov))
-            # for g, e in zip(d, phi):
-            #         est = np.trace(np.matmul(X.value,e))
-            #         mse = sum((g-e)**2)
-            #         print("est:")
-            #         print(est)
-            #         print("ground truth:")
-            #         print(g)
-            #         print("mse:")
-            #         print(mse)
-
-    else:
-        print("failed - no samples")
-    d2 = datetime.now()
-    print("total time for information transfer:")
-    print(d2.minute - d1.minute + (d2.hour-d1.hour) * 60)
-    print(d2.minute - d1.minute + (d2.hour-d1.hour) * 60)
-    print("current call:")
-    print(information_transfer_single.calls)
-    print('total success:')
-    print(information_transfer_single.success_num)
-    print('total failure:')
-    print(information_transfer_single.failure_num)
-    print('last success on:')
-    print(information_transfer_single.last_success)
-    return precisions_return, cov
-information_transfer_single.success_num = 0
-information_transfer_single.failure_num = 0
-information_transfer_single.calls = 0
-information_transfer_single.last_success = 0
-
-def information_transfer(phiphiT, dqn_feat, target_dqn_feat, replay_buffer, batch_size, num_actions, feat_dim):
-    d = [[] for i in range(num_actions)]
-    phi = [[] for i in range(num_actions)]
-    n = [0 for i in range(num_actions)]
-    print("transforming information")
-    from datetime import datetime
-    fmt = '%Y-%m-%d %H:%M:%S'
-    d1 = datetime.now()
-    for j in range(batch_size):
-        obs_t, action, reward, obs_tp1, done = replay_buffer.sample(1)
-
-        # confidence scores for old data
-        c = target_dqn_feat(obs_t).reshape((feat_dim, 1))
-
-        d[int(action)].append(np.dot(np.dot(c.T, phiphiT[int(action)]), c))
-
-        # new data correlations
-        c = dqn_feat(obs_t).reshape((feat_dim, 1))
-        phi[int(action)].append(np.outer(c, c))
-        n[int(action)] += 1
-    print(n,sum(n))
-    precisions_return = []
-    cov = []
-    prior = (1/0.001) * np.eye(feat_dim)
-    print("solving optimization")
-    for a in range(num_actions):
-        print("for action {}".format(a))
-        if d[a] != []:
-            X = cvx.Variable((feat_dim, feat_dim), PSD=True)
-            # Form objective.
-            obj = cvx.Minimize(sum([(cvx.trace(X * phi[a][i]) - np.squeeze(d[a][i])) ** 2 for i in range(len(d[a]))]))
-            prob = cvx.Problem(obj)
-            prob.solve()
-            if X.value is None:
-                print("failed - cvxpy couldn't solve for action {}".format(a))
-                precisions_return.append(np.linalg.inv(prior))
-                cov.append(prior)
-            else:
-                precisions_return.append(np.linalg.inv(X.value + prior))
-                cov.append(X.value + prior)
-        else:
-            print("failed - no samples for this action - {}".format(a))
-            precisions_return.append(np.linalg.inv(prior))
-            cov.append(prior)
-    d2 = datetime.now()
-    print("total time for information transfer:")
-    print(d2.minute - d1.minute + (d2.hour-d1.hour) * 60)
-    print(d2.minute - d1.minute + (d2.hour-d1.hour) * 60)
-    return precisions_return, cov
-
-def BayesRegression(phiphiT, phiY, replay_buffer, dqn_feat, target_dqn_feat, num_actions, blr_param,
-                    w_mu, w_cov, last_layer_weights, prior="sdp", blr_ops=None, sdp_ops=None, old_networks=None, blr_counter=None,old_feat=None):
-    # dqn_ and target_dqn_ are feature extractors for the dqn and target dqn respectivley
-    # in the neural linear settings target are the old features and dqn are the new features
-    # last_layer_weights are the target last layer weights
-    feat_dim = blr_param.feat_dim
-
-    n_samples = blr_param.batch_size if len(replay_buffer) > blr_param.batch_size else len(replay_buffer)
-
-    # obses_t, actions, rewards, obses_tp1, dones = replay_buffer.sample(n_samples)
-    idxes = [i for i in range(len(replay_buffer))]
-    shuffle(idxes)
-
-    phiphiT0 = None
-    if prior == "no prior":
-        print("no prior")
-        phiY *= (1-blr_param.alpha)*0
-        phiphiT *= (1-blr_param.alpha)*0
-        for i in range(num_actions):
-            phiphiT[i] = (1/blr_param.sigma)*np.eye(feat_dim)
-    elif prior == "linear":
-        print("linear")
-        phiphiT0 = information_transfer_linear(phiphiT, dqn_feat, old_feat,num_actions,feat_dim, replay_buffer)
-        phiphiT *= (1-blr_param.alpha)*0
-        phiY *= (1-blr_param.alpha)*0
-    elif prior == "decay":
-        print("simple prior")
-        phiY *= (1-blr_param.alpha)
-        phiphiT *= (1-blr_param.alpha)
-    elif prior == "last layer":
-        print("last layer weights only prior")
-        phiY *= (1-blr_param.alpha)*0
-        phiphiT *= (1-blr_param.alpha)*0
-        for i in range(num_actions):
-            phiphiT[i] = (1/blr_param.sigma)*np.eye(feat_dim)
-    elif prior == "sdp":
-        print("SDP prior")
-        phiphiT0, cov0 = information_transfer_new(phiphiT, dqn_feat, target_dqn_feat, replay_buffer, 300*num_actions      , num_actions, feat_dim, sdp_ops)
-        for j in range(num_actions):
-            print("old phiphiT[{}] new features norm:".format(j))
-            print(np.linalg.norm(phiphiT0[j]))
-            print("old cov0[{}] new features norm:".format(j))
-            print(np.linalg.norm(cov0[j]))
-        phiphiT *= (1-blr_param.alpha)*0
-        phiY *= (1-blr_param.alpha)*0
-    elif prior == "single sdp":
-        print("single SDP prior")
-        # phiphiT0 = 1/blr_param.sigma * np.eye(feat_dim)
-        # phiphiT0 = None
-        # if np.any(phiphiT != np.zeros_like(phiphiT)):
-        print("using 600")
-        phiphiT0, cov0 = information_transfer_single(phiphiT, dqn_feat, target_dqn_feat, replay_buffer, 600      , num_actions, feat_dim, sdp_ops, old_networks, blr_counter)
-        phiphiT *= (1-blr_param.alpha)*0
-        phiY *= (1-blr_param.alpha)*0
-
-    obses_t, actions, rewards, obses_tp1, dones = replay_buffer.get_samples(idxes[:n_samples])
-    n = np.zeros(num_actions)
-    action_rewards = [0. for _ in range(num_actions)]
-
-    mini_batch_size = 32*num_actions
-    for j in tqdm(range((n_samples // mini_batch_size)+1)):
-        # obs_t, action, reward, obs_tp1, done = obses_t[j], actions[j], rewards[j], obses_tp1[j], dones[j]
-        start_idx = j*mini_batch_size
-        end_idx = (j+1)*mini_batch_size if (j+1)*mini_batch_size < len(replay_buffer) else -1
-        obs_t = obses_t[start_idx:end_idx]
-        action = actions[start_idx:end_idx]
-        reward = rewards[start_idx:end_idx]
-        obs_tp1 = obses_tp1[start_idx:end_idx]
-        done = dones[start_idx:end_idx]
-        for k in range(num_actions):
-            if obs_t[action == k].shape[0] < 1:
-                continue
-            phiphiTk, phiYk = blr_ops(obs_t[action == k], action[action == k], reward[action == k], obs_tp1[action == k], done[action == k])
-            phiphiT[k] += phiphiTk
-            phiY[k] += phiYk
-            n[k] += obs_t[action == k].shape[0]
-            action_rewards[k] += sum(reward[action == k])
-    print(n, np.sum(n))
-    return phiphiT, phiY, phiphiT0, last_layer_weights
-
-    # old BayesReg func
-    # for i in range(num_actions):
-    #     if prior == "sdp":# and phiphiT0 is not None:
-    #         if i == 0:
-    #             print("regular sdp")
-    #         if phiphiT0 is None:
-    #             inv = np.linalg.inv(phiphiT[i])
-    #             print("inv {}".format(i))
-    #             print(np.linalg.norm(inv))
-    #             w_mu[i] = np.array(np.dot(inv,phiY[i]))
-    #         else:
-    #             inv = np.linalg.inv(phiphiT[i] + phiphiT0[i])
-    #             w_mu[i] = np.array(np.dot(inv,(phiY[i] + np.dot(phiphiT0[i], last_layer_weights[:,i]))))
-    #             phiphiT[i] += phiphiT0[i]
-    #
-    #     elif prior == "single sdp":
-    #         # shared phiphiT0
-    #         if i == 0:
-    #             print("single sdp")
-    #         if blr_counter == 0:
-    #             inv = np.linalg.inv(phiphiT[i])
-    #             w_mu[i] = np.array(np.dot(inv,(phiY[i])))# + np.dot(phiphiT0, last_layer_weights[:,i]))))
-    #         else:
-    #             print("phiphiT[{}] phiphiT0".format([i]))
-    #             print([np.linalg.norm(phiphiT[i]), np.linalg.norm(phiphiT0)])
-    #             inv = np.linalg.inv(phiphiT[i] + phiphiT0)
-    #             w_mu[i] = np.array(np.dot(inv,(phiY[i]/blr_param.sigma_n + np.dot(phiphiT0, last_layer_weights[:,i]))))
-    #             phiphiT[i] += phiphiT0
-    #     elif prior == "last layer":
-    #         if i == 0:
-    #             print("last layer weights only prior")
-    #         inv = np.linalg.inv(phiphiT[i]/blr_param.sigma_n + 1/blr_param.sigma * np.eye(feat_dim))
-    #         w_mu[i] = np.array(np.dot(inv,(phiY[i]/blr_param.sigma_n + (1/blr_param.sigma)*last_layer_weights[:,i])))
-    #     else:
-    #         if i == 0:
-    #             print("prior: {}".format(prior))
-    #         inv = np.linalg.inv(phiphiT[i]/blr_param.sigma_n + 1/blr_param.sigma * np.eye(feat_dim))
-    #         w_mu[i] = np.array(np.dot(inv,phiY[i]))/blr_param.sigma_n
-    #
-    #     w_cov[i] = blr_param.sigma*inv
-    #     cov_norms[i] = np.linalg.norm(w_cov[i])
-    # print("covariance matrices norms:")
-    # print(cov_norms)
-    # # print("reward gathered for actions")
-    # # print(action_rewards)
-    # # for i in range(num_actions):
-    # #     print("phiphiT[{}] norm".format(i))
-    # #     print(np.linalg.norm(phiphiT[i]))
-    # return phiphiT, phiY, w_mu, w_cov
 
 class ActWrapper(object):
     def __init__(self, act, act_params):
@@ -710,6 +282,8 @@ def learn(env,
         phiphiT = np.zeros((num_actions,feat_dim,feat_dim))
         for i in range(num_actions):
             phiphiT[i] = (1/blr_params.sigma)*np.eye(feat_dim)
+        old_phiphiT_inv = [np.linalg.pinv(phiphiT) for i in range(5)]
+
         phiY = np.zeros((num_actions, feat_dim))
         model_idx = np.random.randint(0,num_models,size=num_actions)
         w_norms = [np.linalg.norm(w_sample[i,model_idx[i]]) for i in range(num_actions)]
@@ -730,6 +304,11 @@ def learn(env,
     episode_rewards = [0.0]
     # episode_Q_estimates = [0.0]
     unclipped_episode_rewards = [0.0]
+    eval_rewards = [0.0]
+
+
+    old_networks_num = 5
+    episode_pseudo_count = [[0.0] for i in range(old_networks_num)]
     saved_mean_reward = None
     obs = env.reset()
     reset = True
@@ -792,6 +371,7 @@ def learn(env,
             new_obs, unclipped_rew, done_list, _ = env.step(env_action)
             done, real_done = done_list
             rew = np.sign(unclipped_rew)
+
             # Store transition in the replay buffer.
             replay_buffer.add(obs, action, rew, new_obs, float(done))
             action_buffers[action].add(obs, action, rew, new_obs, float(done))
@@ -800,10 +380,39 @@ def learn(env,
                 phiphiT_a, phiY_a = blr_ops_old(obses_a, actions_a, rewards_a, obses_tp1_a, dones_a)
                 phiphiT[action] += phiphiT_a
                 phiY[action] += phiY_a
+
+                old_phiphiT_inv_a = [np.tile(oppTi[action], (action_buffers_size,1,1)) for oppTi in old_phiphiT_inv]
+                old_pseudo_count = blr_additions['old_pseudo_counts'](obses_a, *old_phiphiT_inv_a)
+                old_pseudo_count = np.sum(old_pseudo_count, axis=-1)
+                for i in range(old_networks_num):
+                    idx = ((blr_counter-1)-i) % old_networks_num # arrange networks from newest to oldest
+                    episode_pseudo_count[i][-1] += old_pseudo_count[idx]
+
+            if real_done:
+                for a in range(num_actions):
+                    if action_buffers[a]._next_idx != 0:
+                        obses_a, actions_a, rewards_a, obses_tp1_a, dones_a = replay_buffer.get_samples([i for i in range(action_buffers[a]._next_idx)])
+                        nk = obses_a.shape[0]
+
+                        old_phiphiT_inv_a = [np.tile(oppTi[action],(nk,1,1)) for oppTi in old_phiphiT_inv]
+                        old_pseudo_count = blr_additions['old_pseudo_counts'](obses_a, *old_phiphiT_inv_a)
+                        old_pseudo_count = np.sum(old_pseudo_count, axis=-1)
+                        for i in range(old_networks_num):
+                            idx = ((blr_counter-1)-i) % old_networks_num # arrange networks from newest to oldest
+                            episode_pseudo_count[i][-1] += old_pseudo_count[idx]
+
+                        phiphiT_a, phiY_a = blr_ops_old(obses_a, actions_a, rewards_a, obses_tp1_a, dones_a)
+                        phiphiT[a] += phiphiT_a
+                        phiY[a] += phiY_a
+
+                        action_buffers[a]._next_idx = 0
+
+
             obs = new_obs
             episode_rewards[-1] += rew
             # episode_Q_estimates[-1] += estimate
             unclipped_episode_rewards[-1] += unclipped_rew
+
             if done:
                 obs = env.reset()
                 episode_rewards.append(0.0)
@@ -811,6 +420,19 @@ def learn(env,
                 reset = True
             if real_done:
                 unclipped_episode_rewards.append(0.0)
+
+                for i in range(old_networks_num):
+                    episode_pseudo_count[i].append(0.0)
+                # every time full episode ends run eval episode
+                while not real_done:
+                    action, _ = blr_additions['eval_act_f'](np.array(obs)[None])
+                    new_obs, unclipped_rew, done_list, _ = env.step(action)
+                    done, real_done = done_list
+                    eval_rewards[-1] += unclipped_rew
+                    obs = new_obs
+                eval_rewards.append(0.0)
+                obs = env.reset()
+
 
             if t > learning_starts and t % train_freq == 0:
                 # Minimize the error in Bellman's equation on a batch sampled from replay buffer.
@@ -827,6 +449,7 @@ def learn(env,
 
             if thompson:
                 if t > learning_starts and t % (blr_params.update_w*target_network_update_freq) == 0:
+                    old_phiphiT_inv[blr_counter % 5] = np.linalg.pinv(phiphiT)
                     llw = sess.run(blr_additions['last_layer_weights'])
                     phiphiT, phiY, phiphiT0, last_layer_weights = BayesRegression(phiphiT,phiY,replay_buffer,
                                                                  blr_additions['feature_extractor'],
@@ -837,18 +460,12 @@ def learn(env,
                                                                  sdp_ops=blr_additions['sdp_ops'],
                                                                  old_networks=blr_additions['old_networks'],
                                                                  blr_counter=blr_counter, old_feat=blr_additions['old_feature_extractor'])
+                    blr_counter += 1
                     if seed is not None:
                         print('seed is {}'.format(seed))
                     blr_additions['update_old']()
-                    # if blr_additions['old_networks'] is not None:
-                    #     if blr_counter == 0:
-                    #         for key in blr_additions['old_networks'].keys():
-                    #             blr_additions['old_networks'][key]["update"]()
-                    #             blr_additions['old_networks'][key]["phiphiT"] = phiphiT
-                    #     else:
-                    #         blr_additions['old_networks'][blr_counter % 5]["update"]()
-                    #         blr_additions['old_networks'][blr_counter % 5]["phiphiT"] = phiphiT
-                    blr_counter += 1
+                    if blr_additions['old_networks'] is not None:
+                        blr_additions['old_networks'][blr_counter % 5]["update"]()
 
             if thompson:
                 if t > 0 and t % blr_params.sample_w == 0:
@@ -898,17 +515,31 @@ def learn(env,
             mean_10ep_reward = round(np.mean(episode_rewards[-11:-1]), 1)
             mean_100ep_reward_unclipped = round(np.mean(unclipped_episode_rewards[-101:-1]), 1)
             mean_10ep_reward_unclipped = round(np.mean(unclipped_episode_rewards[-11:-1]), 1)
+            mean_100ep_reward_eval = round(np.mean(eval_rewards[-101:-1]), 1)
+            mean_10ep_reward_eval = round(np.mean(eval_rewards[-11:-1]), 1)
             # mean_100ep_est = round(np.mean(episode_Q_estimates[-101:-1]), 1)
             # mean_10ep_est = round(np.mean(episode_Q_estimates[-11:-1]), 1)
             num_episodes = len(episode_rewards)
+            mean_10ep_pseudo_count = [0.0 for _ in range(old_networks_num)]
+            mean_100ep_pseudo_count = [0.0 for _ in range(old_networks_num)]
+            for i in range(old_networks_num):
+                mean_10ep_pseudo_count[i] = round(np.log(np.mean(episode_pseudo_count[i][-11:-1])), 1)
+                mean_100ep_pseudo_count[i] = round(np.log(np.mean(episode_pseudo_count[i][-101:-1])), 1)
+
+
             # if done and print_freq is not None and len(episode_rewards) % print_freq == 0:
-            if t % 10000 == 0:
+            if t % 10000 == 0 and t > 0:
                 logger.record_tabular("steps", t)
                 logger.record_tabular("episodes", num_episodes)
                 logger.record_tabular("mean 100 episode reward", mean_100ep_reward)
                 logger.record_tabular("mean 10 episode reward", mean_10ep_reward)
                 logger.record_tabular("mean 100 unclipped episode reward", mean_100ep_reward_unclipped)
                 logger.record_tabular("mean 10 unclipped episode reward", mean_10ep_reward_unclipped)
+                logger.record_tabular("mean 100 eval episode reward", mean_100ep_reward_eval)
+                logger.record_tabular("mean 10 eval episode reward", mean_10ep_reward_eval)
+                for i in range(old_networks_num):
+                    logger.record_tabular("mean 10 episode pseudo count for -{} net".format(i+1), mean_10ep_pseudo_count[i])
+                    logger.record_tabular("mean 100 episode pseudo count for -{} net".format(i+1), mean_100ep_pseudo_count[i])
                 # logger.record_tabular("mean 100 episode Q estimates", mean_100ep_est)
                 # logger.record_tabular("mean 10 episode Q estimates", mean_10ep_est)
                 logger.dump_tabular()

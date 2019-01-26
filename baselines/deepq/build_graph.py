@@ -369,6 +369,53 @@ def build_act_with_thompson_sampling(make_obs_ph, q_func, num_actions, scope="de
                          outputs=[sampled_actions, sampled_actions_estimates])
         return act
 
+def build_act_evaluate_thompson(make_obs_ph, q_func, num_actions, scope="deepq", reuse=None):
+    """Creates the act function:
+
+    Parameters
+    ----------
+    make_obs_ph: str -> tf.placeholder or TfInput
+        a function that take a name and creates a placeholder of input with that name
+    q_func: (tf.Variable, int, str, bool) -> tf.Variable
+        the model that takes the following inputs:
+            observation_in: object
+                the output of observation placeholder
+            num_actions: int
+                number of actions
+            scope: str
+            reuse: bool
+                should be passed to outer variable scope
+        and returns a tensor of shape (batch_size, num_actions) with values of every action.
+    num_actions: int
+        number of actions.
+    scope: str or VariableScope
+        optional scope for variable_scope.
+    reuse: bool or None
+        whether or not the variables should be reused. To be able to reuse the scope must be given.
+
+    Returns
+    -------
+    act: (tf.Variable, bool, float) -> tf.Variable
+        function to select and action given observation.
+`       See the top of the file for details.
+    """
+    with tf.variable_scope(scope, reuse=reuse):
+        observations_ph = make_obs_ph("observation")
+
+        eps = tf.get_variable("eps", (), initializer=tf.constant_initializer(0.001))
+
+        q_values, features = q_func(observations_ph.get(), num_actions, scope="q_func")
+        deterministic_actions = tf.argmax(q_values, axis=1)
+
+        batch_size = tf.shape(observations_ph.get())[0]
+        random_actions = tf.random_uniform(tf.stack([batch_size]), minval=0, maxval=num_actions, dtype=tf.int64)
+        chose_random = tf.random_uniform(tf.stack([batch_size]), minval=0, maxval=1, dtype=tf.float32) < eps
+
+        output_actions = tf.where(chose_random, random_actions, deterministic_actions)
+        output_actions_est = tf.reduce_sum(q_values * tf.one_hot(output_actions, num_actions), 1)
+        act = U.function(inputs=[observations_ph],
+                         outputs=[output_actions, output_actions_est])
+        return act
 
 def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=None, gamma=1.0,
     double_q=False, scope="deepq", reuse=None, param_noise=False, param_noise_filter_func=None, thompson=True):
@@ -430,6 +477,7 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
             param_noise_filter_func=param_noise_filter_func)
     elif thompson:
         act_f = build_act_with_thompson_sampling(make_obs_ph, q_func, num_actions, scope=scope, reuse=reuse)
+        eval_act_f = build_act_evaluate_thompson(make_obs_ph, q_func, num_actions, scope=scope, reuse=reuse)
     else:
         act_f = build_act(make_obs_ph, q_func, num_actions, scope=scope, reuse=reuse)
 
@@ -443,10 +491,7 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
         importance_weights_ph = tf.placeholder(tf.float32, [None], name="weight")
 
         # q network evaluation
-        if thompson:
-            q_t, phi_xt = q_func(obs_t_input.get(), num_actions, scope="q_func")#, reuse=True)  # reuse parameters from act
-        else:
-            q_t, phi_xt = q_func(obs_t_input.get(), num_actions, scope="q_func", reuse=True)  # reuse parameters from act
+        q_t, phi_xt = q_func(obs_t_input.get(), num_actions, scope="q_func", reuse=True)  # reuse parameters from eval act
         q_func_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=tf.get_variable_scope().name + "/q_func")
 
         # target q network evalution
@@ -524,11 +569,11 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
             feat_target = U.function([obs_tp1_input], phi_target_xtp1)
 
             # old q network evalution
-            ensemble = False
+            ensemble = True
             outer_product_op = tf.matmul(tf.expand_dims(phi_xt,axis=-1), tf.expand_dims(phi_xt,axis=1))
             if ensemble:
                 old_networks = {i:None for i in range(5)}
-                phiphiTs = []
+                phiphiTs_inv = []
                 for i in range(5):
                     q_t_old, phi_old = q_func(obs_t_input.get(), num_actions, scope="old_q_func_{}".format(i))
                     old_q_func_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=tf.get_variable_scope().name + "/old_q_func_{}".format(i))
@@ -539,49 +584,38 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
                     update_old_expr = tf.group(*update_old_expr)
                     update_old = U.function([], [], updates=[update_old_expr])
                     feat_old = U.function([obs_t_input], phi_old)
-                    phiphiT = tf.placeholder(tf.float32, [None] + [feat_dim, feat_dim], name="phiphiT_{}".format(i))
-                    phiphiTs.append(phiphiT)
-                    old_networks[i] = {"phi_old": phi_old, "phiphiT":phiphiT, "features": feat_old, "update": update_old}
+                    phiphiT_inv = tf.placeholder(tf.float32, [None] + [feat_dim, feat_dim], name="phiphiT_inv_{}".format(i))
+                    phiphiTs_inv.append(phiphiT_inv)
+                    old_networks[i] = {"phi_old": phi_old, "phiphiT_inv":phiphiT_inv, "features": feat_old, "update": update_old}
 
                 old_pseudo_counts = []
                 for i in range(5):
-                    old_pseudo_counts.append(tf.reduce_sum(tf.matmul(tf.matmul(tf.expand_dims(old_networks[i]['phi_old'],axis=1), old_networks[i]['phiphiT']),tf.expand_dims(old_networks[i]['phi_old'], axis=-1)),axis=[1,2]))
-                debug = tf.stack(old_pseudo_counts)
-                pseudo_count = tf.reduce_max(tf.stack(old_pseudo_counts),axis=0)
+                    old_pseudo_counts.append(tf.reduce_sum(tf.matmul(tf.matmul(tf.expand_dims(old_networks[i]['phi_old'],axis=1), old_networks[i]['phiphiT_inv']),tf.expand_dims(old_networks[i]['phi_old'], axis=-1)),axis=[1,2]))
+                # debug = tf.stack(old_pseudo_counts)
+                old_pseudo_counts = tf.stack(old_pseudo_counts)
 
-                sdp_ops = U.function(
-                    inputs=[
-                        obs_t_input,
-                        obs_tp1_input,
-                        *phiphiTs
-                    ],
-                    outputs=[
-                        pseudo_count,
-                        outer_product_op,
-                        debug
-                    ]
-                )
+                old_pseudo_counts_f = U.function([obs_t_input, *phiphiTs_inv], old_pseudo_counts)
 
-            else:
-                old_networks = None
-                q_t_old, phi_old = q_func(obs_t_input.get(), num_actions, scope="old_q_func", reuse=True)
-                phiphiT_inv = tf.placeholder(tf.float32, [None] + [feat_dim, feat_dim], name="phiphiT_inv")
-                pseudo_count = tf.reduce_sum(tf.matmul(tf.matmul(tf.expand_dims(phi_old,axis=1), phiphiT_inv),tf.expand_dims(phi_old, axis=-1)),axis=[1,2])
 
-                phiphiTold_op = tf.matmul(tf.transpose(phi_old), phi_old)
-                phiYold_op = tf.squeeze(tf.matmul(tf.expand_dims(q_t_selected_target,0), phi_old))
 
-                sdp_ops = U.function(
-                    inputs=[
-                        obs_t_input,
-                        obs_tp1_input,
-                        phiphiT_inv
-                    ],
-                    outputs=[
-                        pseudo_count,
-                        outer_product_op
-                    ]
-                )
+            q_t_old, phi_old = q_func(obs_t_input.get(), num_actions, scope="old_q_func", reuse=True)
+            phiphiT_inv = tf.placeholder(tf.float32, [None] + [feat_dim, feat_dim], name="phiphiT_inv")
+            pseudo_count = tf.reduce_sum(tf.matmul(tf.matmul(tf.expand_dims(phi_old,axis=1), phiphiT_inv),tf.expand_dims(phi_old, axis=-1)),axis=[1,2])
+
+            phiphiTold_op = tf.matmul(tf.transpose(phi_old), phi_old)
+            phiYold_op = tf.squeeze(tf.matmul(tf.expand_dims(q_t_selected_target,0), phi_old))
+
+            sdp_ops = U.function(
+                inputs=[
+                    obs_t_input,
+                    obs_tp1_input,
+                    phiphiT_inv
+                ],
+                outputs=[
+                    pseudo_count,
+                    outer_product_op
+                ]
+            )
 
             # Create callable functions
             blr_ops = U.function(
@@ -625,7 +659,9 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
                 'update_old': update_old,
                 'old_feature_extractor': feat_old,
                 'sdp_ops': sdp_ops,
-                'old_networks': old_networks
+                'old_networks': old_networks,
+                'eval_act': eval_act_f,
+                'old_pseudo_counts': old_pseudo_counts_f
             }
         else:
             blr_additions = None
