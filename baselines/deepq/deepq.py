@@ -28,7 +28,7 @@ first_time = True
 
 class BLRParams(object):
     def __init__(self):
-        self.sigma = 0.001 #0.001 W prior variance
+        self.sigma = 1 #0.001 W prior variance
         self.sigma_n = 1 # noise variance
         self.alpha = .01 # forgetting factor
         if debug_flag:
