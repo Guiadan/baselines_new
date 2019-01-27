@@ -426,8 +426,9 @@ def learn(env,
                 for i in range(old_networks_num):
                     episode_pseudo_count[i].append(0.0)
                 # every time full episode ends run eval episode
+                real_done = False
                 while not real_done:
-                    action, _ = blr_additions['eval_act_f'](np.array(obs)[None])
+                    action, _ = blr_additions['eval_act'](np.array(obs)[None])
                     new_obs, unclipped_rew, done_list, _ = env.step(action)
                     done, real_done = done_list
                     eval_rewards[-1] += unclipped_rew

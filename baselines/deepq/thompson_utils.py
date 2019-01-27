@@ -124,7 +124,7 @@ def information_transfer_linear(phiphiT, dqn_feat, old_feat, num_actions, feat_d
                 xi_m = xi_t
             else:
                 xi_m = np.concatenate([xi_m, xi_t],axis=-1)
-        phiphiT0[i] = (xi_m @ np.linalg.pinv(phi_m)) @ phiphiT[i] @ (np.linalg.pinv(phi_m).T @ xi_m.T) + 1/0.001 * np.eye(feat_dim)
+        phiphiT0[i] = (xi_m @ np.linalg.pinv(phi_m)) @ phiphiT[i] @ (np.linalg.pinv(phi_m).T @ xi_m.T)# + 1/0.001 * np.eye(feat_dim)
 
     d2 = datetime.now()
     print("total time for linear prior")
