@@ -482,7 +482,7 @@ def learn(env,
             if thompson:
                 if t > 0 and t % blr_params.sample_w == 0:
                     # sampling num_models samples of w
-                    # print(actions_hist)
+                    print(actions_hist)
                     actions_hist = [0. for _ in range(num_actions)]
                     for i in range(num_actions):
                         if prior == 'no prior' or last_layer_weights is None:

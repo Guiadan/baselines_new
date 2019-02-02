@@ -223,6 +223,7 @@ def conv_only_with_bn(convs=[(32, 8, 4), (64, 4, 2), (64, 3, 1)], **conv_kwargs)
                                            kernel_size=kernel_size,
                                            stride=stride,
                                            normalizer_fn=layers.batch_norm,
+                                           normalizer_params={'center':True, 'scale':True, 'decay':0.9},
                                            activation_fn=tf.nn.relu,
                                            **conv_kwargs)
 

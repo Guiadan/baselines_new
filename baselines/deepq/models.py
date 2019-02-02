@@ -161,6 +161,7 @@ def build_q_func_and_features(network, hiddens=[256], dueling=True, layer_norm=F
                     action_out = layers.fully_connected(action_out, num_outputs=hidden, activation_fn=None)
                     if layer_norm:
                         action_out = layers.layer_norm(action_out, center=True, scale=True)
+                    action_out = layers.batch_norm(action_out,decay=0.9, center=False)
                     action_out = tf.nn.relu(action_out)
                 features = action_out
                 action_scores = layers.fully_connected(action_out, num_outputs=num_actions, activation_fn=None)
