@@ -231,11 +231,14 @@ def learn(env,
     def make_obs_ph(name):
         return ObservationInput(observation_space, name=name)
 
+
+    #deep mind optimizer
+    dm_opt = tf.train.RMSPropOptimizer(learning_rate=0.00025,decay=0.95,momentum=0.0,epsilon=0.00001,centered=True)
     act, train, update_target, debug, blr_additions = deepq.build_train(
         make_obs_ph=make_obs_ph,
         q_func=q_func,
         num_actions=env.action_space.n,
-        optimizer=tf.train.AdamOptimizer(learning_rate=lr),#tf.train.RMSPropOptimizer(learning_rate=lr,momentum=0.95),#
+        optimizer=dm_opt,#tf.train.AdamOptimizer(learning_rate=lr),#tf.train.RMSPropOptimizer(learning_rate=lr,momentum=0.95),#
         gamma=gamma,
         grad_norm_clipping=10,
         param_noise=param_noise,
@@ -310,7 +313,7 @@ def learn(env,
 
 
     old_networks_num = 5
-    episode_pseudo_count = [[0.0] for i in range(old_networks_num)]
+    # episode_pseudo_count = [[0.0] for i in range(old_networks_num)]
     saved_mean_reward = None
     obs = env.reset()
     reset = True
@@ -383,12 +386,12 @@ def learn(env,
                 phiphiT[action] += phiphiT_a
                 phiY[action] += phiY_a
 
-                old_phiphiT_inv_a = [np.tile(oppTi[action], (action_buffers_size,1,1)) for oppTi in old_phiphiT_inv]
-                old_pseudo_count = blr_additions['old_pseudo_counts'](obses_a, *old_phiphiT_inv_a)
-                old_pseudo_count = np.sum(old_pseudo_count, axis=-1)
-                for i in range(old_networks_num):
-                    idx = ((blr_counter-1)-i) % old_networks_num # arrange networks from newest to oldest
-                    episode_pseudo_count[i][-1] += old_pseudo_count[idx]
+                # old_phiphiT_inv_a = [np.tile(oppTi[action], (action_buffers_size,1,1)) for oppTi in old_phiphiT_inv]
+                # old_pseudo_count = blr_additions['old_pseudo_counts'](obses_a, *old_phiphiT_inv_a)
+                # old_pseudo_count = np.sum(old_pseudo_count, axis=-1)
+                # for i in range(old_networks_num):
+                #     idx = ((blr_counter-1)-i) % old_networks_num # arrange networks from newest to oldest
+                #     episode_pseudo_count[i][-1] += old_pseudo_count[idx]
 
             if real_done:
                 for a in range(num_actions):
@@ -396,12 +399,12 @@ def learn(env,
                         obses_a, actions_a, rewards_a, obses_tp1_a, dones_a = replay_buffer.get_samples([i for i in range(action_buffers[a]._next_idx)])
                         nk = obses_a.shape[0]
 
-                        old_phiphiT_inv_a = [np.tile(oppTi[action],(nk,1,1)) for oppTi in old_phiphiT_inv]
-                        old_pseudo_count = blr_additions['old_pseudo_counts'](obses_a, *old_phiphiT_inv_a)
-                        old_pseudo_count = np.sum(old_pseudo_count, axis=-1)
-                        for i in range(old_networks_num):
-                            idx = ((blr_counter-1)-i) % old_networks_num # arrange networks from newest to oldest
-                            episode_pseudo_count[i][-1] += old_pseudo_count[idx]
+                        # old_phiphiT_inv_a = [np.tile(oppTi[action],(nk,1,1)) for oppTi in old_phiphiT_inv]
+                        # old_pseudo_count = blr_additions['old_pseudo_counts'](obses_a, *old_phiphiT_inv_a)
+                        # old_pseudo_count = np.sum(old_pseudo_count, axis=-1)
+                        # for i in range(old_networks_num):
+                        #     idx = ((blr_counter-1)-i) % old_networks_num # arrange networks from newest to oldest
+                        #     episode_pseudo_count[i][-1] += old_pseudo_count[idx]
 
                         phiphiT_a, phiY_a = blr_ops_old(obses_a, actions_a, rewards_a, obses_tp1_a, dones_a)
                         phiphiT[a] += phiphiT_a
@@ -423,8 +426,8 @@ def learn(env,
             if real_done:
                 unclipped_episode_rewards.append(0.0)
 
-                for i in range(old_networks_num):
-                    episode_pseudo_count[i].append(0.0)
+                # for i in range(old_networks_num):
+                #     episode_pseudo_count[i].append(0.0)
                 # every time full episode ends run eval episode
                 real_done = False
                 while not real_done:
@@ -507,6 +510,11 @@ def learn(env,
                             print("No valid prior")
                             exit(0)
 
+                        print("action {}".format(i))
+                        print("cov norm:")
+                        print(np.linalg.norm(cov))
+                        print("cov norm times sigma:")
+                        print(np.linalg.norm(blr_params.sigma*cov))
 
                         for j in range(num_models):
                             try:
@@ -529,11 +537,11 @@ def learn(env,
             # mean_100ep_est = round(np.mean(episode_Q_estimates[-101:-1]), 1)
             # mean_10ep_est = round(np.mean(episode_Q_estimates[-11:-1]), 1)
             num_episodes = len(episode_rewards)
-            mean_10ep_pseudo_count = [0.0 for _ in range(old_networks_num)]
-            mean_100ep_pseudo_count = [0.0 for _ in range(old_networks_num)]
-            for i in range(old_networks_num):
-                mean_10ep_pseudo_count[i] = round(np.log(np.mean(episode_pseudo_count[i][-11:-1])), 1)
-                mean_100ep_pseudo_count[i] = round(np.log(np.mean(episode_pseudo_count[i][-101:-1])), 1)
+            # mean_10ep_pseudo_count = [0.0 for _ in range(old_networks_num)]
+            # mean_100ep_pseudo_count = [0.0 for _ in range(old_networks_num)]
+            # for i in range(old_networks_num):
+            #     mean_10ep_pseudo_count[i] = round(np.log(np.mean(episode_pseudo_count[i][-11:-1])), 1)
+            #     mean_100ep_pseudo_count[i] = round(np.log(np.mean(episode_pseudo_count[i][-101:-1])), 1)
 
 
             # if done and print_freq is not None and len(episode_rewards) % print_freq == 0:
@@ -546,9 +554,9 @@ def learn(env,
                 logger.record_tabular("mean 10 unclipped episode reward", mean_10ep_reward_unclipped)
                 logger.record_tabular("mean 100 eval episode reward", mean_100ep_reward_eval)
                 logger.record_tabular("mean 10 eval episode reward", mean_10ep_reward_eval)
-                for i in range(old_networks_num):
-                    logger.record_tabular("mean 10 episode pseudo count for -{} net".format(i+1), mean_10ep_pseudo_count[i])
-                    logger.record_tabular("mean 100 episode pseudo count for -{} net".format(i+1), mean_100ep_pseudo_count[i])
+                # for i in range(old_networks_num):
+                #     logger.record_tabular("mean 10 episode pseudo count for -{} net".format(i+1), mean_10ep_pseudo_count[i])
+                #     logger.record_tabular("mean 100 episode pseudo count for -{} net".format(i+1), mean_100ep_pseudo_count[i])
                 # logger.record_tabular("mean 100 episode Q estimates", mean_100ep_est)
                 # logger.record_tabular("mean 10 episode Q estimates", mean_10ep_est)
                 logger.dump_tabular()

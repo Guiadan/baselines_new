@@ -19,7 +19,7 @@ def atari():
         )
     else:
         return dict(
-            network='conv_only',
+            network='conv_only_with_bn',#conv_only
             lr=1e-4,#1e-4
             buffer_size=1000000,#1000000
             exploration_fraction=0.1,
