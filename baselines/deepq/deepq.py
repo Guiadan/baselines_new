@@ -419,7 +419,7 @@ def learn(env,
             # episode_Q_estimates[-1] += estimate
             unclipped_episode_rewards[-1] += unclipped_rew
 
-            if t % 25000 == 0:
+            if t % 250000 == 0:
                 eval_flag = True
 
             if done:
@@ -435,7 +435,7 @@ def learn(env,
                     if eval_flag:
                         real_done = False
                         eval_rewards = [0.0]
-                        for te in range(12500):
+                        for te in range(125000):
                             action, _ = blr_additions['eval_act'](np.array(obs)[None])
                             new_obs, unclipped_rew, done_list, _ = env.step(action)
                             done, real_done = done_list
