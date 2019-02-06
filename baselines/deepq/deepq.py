@@ -233,12 +233,12 @@ def learn(env,
 
 
     #deep mind optimizer
-    dm_opt = tf.train.RMSPropOptimizer(learning_rate=0.00025,decay=0.95,momentum=0.0,epsilon=0.00001,centered=True)
+    # dm_opt = tf.train.RMSPropOptimizer(learning_rate=0.00025,decay=0.95,momentum=0.0,epsilon=0.00001,centered=True)
     act, train, update_target, debug, blr_additions = deepq.build_train(
         make_obs_ph=make_obs_ph,
         q_func=q_func,
         num_actions=env.action_space.n,
-        optimizer=dm_opt,#tf.train.AdamOptimizer(learning_rate=lr),#tf.train.RMSPropOptimizer(learning_rate=lr,momentum=0.95),#
+        optimizer=tf.train.AdamOptimizer(learning_rate=lr),#tf.train.RMSPropOptimizer(learning_rate=lr,momentum=0.95),#
         gamma=gamma,
         grad_norm_clipping=10,
         param_noise=param_noise,
@@ -338,6 +338,7 @@ def learn(env,
         blr_counter = 0
         action_buffers_size = 128
         action_buffers = [ReplayBuffer(action_buffers_size) for _ in range(num_actions)]
+        eval_flag = False
         for t in tqdm(range(total_timesteps)):
 
             if callback is not None:
@@ -418,26 +419,38 @@ def learn(env,
             # episode_Q_estimates[-1] += estimate
             unclipped_episode_rewards[-1] += unclipped_rew
 
+            if t % 25000 == 0:
+                eval_flag = True
+
             if done:
                 obs = env.reset()
                 episode_rewards.append(0.0)
                 # episode_Q_estimates.append(0.0)
                 reset = True
-            if real_done:
-                unclipped_episode_rewards.append(0.0)
-
-                # for i in range(old_networks_num):
-                #     episode_pseudo_count[i].append(0.0)
-                # every time full episode ends run eval episode
-                real_done = False
-                while not real_done:
-                    action, _ = blr_additions['eval_act'](np.array(obs)[None])
-                    new_obs, unclipped_rew, done_list, _ = env.step(action)
-                    done, real_done = done_list
-                    eval_rewards[-1] += unclipped_rew
-                    obs = new_obs
-                eval_rewards.append(0.0)
-                obs = env.reset()
+                if real_done:
+                    unclipped_episode_rewards.append(0.0)
+                    # for i in range(old_networks_num):
+                    #     episode_pseudo_count[i].append(0.0)
+                    # every time full episode ends run eval episode
+                    if eval_flag:
+                        real_done = False
+                        eval_rewards = [0.0]
+                        for te in range(12500):
+                            action, _ = blr_additions['eval_act'](np.array(obs)[None])
+                            new_obs, unclipped_rew, done_list, _ = env.step(action)
+                            done, real_done = done_list
+                            eval_rewards[-1] += unclipped_rew
+                            obs = new_obs
+                            if done:
+                                obs = env.reset()
+                            if real_done:
+                                eval_rewards.append(0.0)
+                        obs = env.reset()
+                        eval_rewards.pop()
+                        mean_reward_eval = round(np.mean(eval_rewards), 1)
+                        logger.record_tabular("mean eval episode reward", mean_reward_eval)
+                        logger.dump_tabular()
+                        eval_flag = False
 
 
             if t > learning_starts and t % train_freq == 0:
@@ -532,8 +545,8 @@ def learn(env,
             mean_10ep_reward = round(np.mean(episode_rewards[-11:-1]), 1)
             mean_100ep_reward_unclipped = round(np.mean(unclipped_episode_rewards[-101:-1]), 1)
             mean_10ep_reward_unclipped = round(np.mean(unclipped_episode_rewards[-11:-1]), 1)
-            mean_100ep_reward_eval = round(np.mean(eval_rewards[-101:-1]), 1)
-            mean_10ep_reward_eval = round(np.mean(eval_rewards[-11:-1]), 1)
+            # mean_100ep_reward_eval = round(np.mean(eval_rewards[-101:-1]), 1)
+            # mean_10ep_reward_eval = round(np.mean(eval_rewards[-11:-1]), 1)
             # mean_100ep_est = round(np.mean(episode_Q_estimates[-101:-1]), 1)
             # mean_10ep_est = round(np.mean(episode_Q_estimates[-11:-1]), 1)
             num_episodes = len(episode_rewards)
@@ -552,8 +565,8 @@ def learn(env,
                 logger.record_tabular("mean 10 episode reward", mean_10ep_reward)
                 logger.record_tabular("mean 100 unclipped episode reward", mean_100ep_reward_unclipped)
                 logger.record_tabular("mean 10 unclipped episode reward", mean_10ep_reward_unclipped)
-                logger.record_tabular("mean 100 eval episode reward", mean_100ep_reward_eval)
-                logger.record_tabular("mean 10 eval episode reward", mean_10ep_reward_eval)
+                # logger.record_tabular("mean 100 eval episode reward", mean_100ep_reward_eval)
+                # logger.record_tabular("mean 10 eval episode reward", mean_10ep_reward_eval)
                 # for i in range(old_networks_num):
                 #     logger.record_tabular("mean 10 episode pseudo count for -{} net".format(i+1), mean_10ep_pseudo_count[i])
                 #     logger.record_tabular("mean 100 episode pseudo count for -{} net".format(i+1), mean_100ep_pseudo_count[i])
