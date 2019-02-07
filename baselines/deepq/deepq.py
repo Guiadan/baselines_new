@@ -37,7 +37,7 @@ class BLRParams(object):
             self.sample_w = 1000
         else:
             self.sample_w = 10000
-            self.update_w = 1 # multiplied by update target frequency
+            self.update_w = 5 # multiplied by update target frequency
         self.batch_size = 1000000# batch size to do blr from
         self.gamma = 0.99 #dqn gamma
         self.feat_dim = 128 #256
