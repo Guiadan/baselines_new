@@ -36,7 +36,7 @@ class BLRParams(object):
             self.sample_w = 1000
         else:
             self.sample_w = 10000
-            self.update_w = 10 # multiplied by update target frequency
+            self.update_w = 1 # multiplied by update target frequency
         self.batch_size = 1000000# batch size to do blr from
         self.gamma = 0.99 #dqn gamma
         self.feat_dim = 128 #256
@@ -282,8 +282,8 @@ def learn(env,
         for i in range(num_actions):
             w_cov[i] = blr_params.sigma*np.eye(feat_dim)
 
-        phiphiT = np.zeros((num_actions,feat_dim,feat_dim))
-        phiphiT_inv = np.zeros((num_actions,feat_dim,feat_dim))
+        phiphiT = np.zeros((num_actions,feat_dim,feat_dim),dtype=np.float32)
+        phiphiT_inv = np.zeros((num_actions,feat_dim,feat_dim), dtype=np.float32)
         for i in range(num_actions):
             phiphiT[i] = (1/blr_params.sigma)*np.eye(feat_dim)
             phiphiT_inv[i] = blr_params.sigma*np.eye(feat_dim)
@@ -419,7 +419,7 @@ def learn(env,
             # episode_Q_estimates[-1] += estimate
             unclipped_episode_rewards[-1] += unclipped_rew
 
-            if t % 250000 == 0:
+            if t % 250000 == 0 and t > 0:
                 eval_flag = True
 
             if done:
@@ -523,11 +523,12 @@ def learn(env,
                             print("No valid prior")
                             exit(0)
 
-                        print("action {}".format(i))
-                        print("cov norm:")
-                        print(np.linalg.norm(cov))
-                        print("cov norm times sigma:")
-                        print(np.linalg.norm(blr_params.sigma*cov))
+                        if t % 7 == 0:
+                            print("action {}".format(i))
+                            print("cov norm:")
+                            print(np.linalg.norm(cov))
+                            print("cov norm times sigma:")
+                            print(np.linalg.norm(blr_params.sigma*cov))
 
                         for j in range(num_models):
                             try:

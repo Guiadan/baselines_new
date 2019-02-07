@@ -4,6 +4,7 @@ from datetime import datetime
 from random import shuffle
 import numpy as np
 from tqdm import tqdm
+import tensorflow as tf
 
 def information_transfer_new(phiphiT, dqn_feat, target_dqn_feat, replay_buffer, batch_size, num_actions, feat_dim, sdp_ops):
     d = [[] for i in range(num_actions)]
@@ -109,13 +110,16 @@ def information_transfer_linear(phiphiT, dqn_feat, old_feat, num_actions, feat_d
         phi_m = None
         xi_m = None
         mi = obses_t_per_a[i].shape[0]
-        M = min([1000, mi])
+        M = min([10000, mi])
         if M < feat_dim:
             phiphiT0[i] = 1/0.001 * np.eye(feat_dim)
             continue
-        for m in range(M):
-            phi_t = old_feat(obses_t_per_a[i][idxes_per_a[i][m]][None]).T
-            xi_t = dqn_feat(obses_t_per_a[i][idxes_per_a[i][m]][None]).T
+        mini_batch_size = 2048
+        for m in range(M // mini_batch_size + 1):
+            start_idx = m*mini_batch_size
+            end_idx = min([(m+1)*mini_batch_size, M])
+            phi_t = old_feat(obses_t_per_a[i][idxes_per_a[i][start_idx:end_idx]][None]).T
+            xi_t = dqn_feat(obses_t_per_a[i][idxes_per_a[i][start_idx:end_idx]][None]).T
             if phi_m is None:
                 phi_m = phi_t
             else:
@@ -124,7 +128,10 @@ def information_transfer_linear(phiphiT, dqn_feat, old_feat, num_actions, feat_d
                 xi_m = xi_t
             else:
                 xi_m = np.concatenate([xi_m, xi_t],axis=-1)
-        phiphiT0[i] = (xi_m @ np.linalg.pinv(phi_m)) @ phiphiT[i] @ (np.linalg.pinv(phi_m).T @ xi_m.T)# + 1/0.001 * np.eye(feat_dim)
+        phi_m_inv = np.linalg.pinv(phi_m)
+        xi_m_phi_m_inv = tf.matmul(xi_m, phi_m_inv).eval()
+        phiphiT0[i] = tf.matmul(tf.matmul(xi_m_phi_m_inv, phiphiT[i]).eval(), xi_m_phi_m_inv.T).eval()# + 1/0.001 * np.eye(feat_dim)
+        # phiphiT0[i] = (xi_m @ phi_m_inv) @ phiphiT[i] @ (phi_m_inv.T @ xi_m.T)# + 1/0.001 * np.eye(feat_dim)
 
     d2 = datetime.now()
     print("total time for linear prior")
@@ -311,7 +318,7 @@ def BayesRegression(phiphiT, phiY, replay_buffer, dqn_feat, target_dqn_feat, num
     n = np.zeros(num_actions)
     action_rewards = [0. for _ in range(num_actions)]
 
-    mini_batch_size = 32*num_actions
+    mini_batch_size = 100*num_actions
     for j in tqdm(range((n_samples // mini_batch_size)+1)):
         # obs_t, action, reward, obs_tp1, done = obses_t[j], actions[j], rewards[j], obses_tp1[j], dones[j]
         start_idx = j*mini_batch_size
