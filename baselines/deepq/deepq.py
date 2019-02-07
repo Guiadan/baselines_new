@@ -21,6 +21,7 @@ from baselines.deepq.models import build_q_func, build_q_func_and_features
 from baselines.deepq.thompson_utils import BayesRegression
 
 #additions
+from scipy.stats import invgamma
 from tqdm import tqdm
 debug_flag = False
 structred_learning = False
@@ -290,13 +291,18 @@ def learn(env,
         old_phiphiT_inv = [phiphiT_inv for i in range(5)]
 
         phiY = np.zeros((num_actions, feat_dim))
+        YY = np.zeros(num_actions)
+
         model_idx = np.random.randint(0,num_models,size=num_actions)
         w_norms = [np.linalg.norm(w_sample[i,model_idx[i]]) for i in range(num_actions)]
         blr_ops = blr_additions['blr_ops']
         blr_ops_old = blr_additions['blr_ops_old']
-        last_layer_weights = None
-        phiphiT0 = None
 
+        last_layer_weights = np.zeros((feat_dim, num_actions))
+        phiphiT0 = np.copy(phiphiT)
+
+        invgamma_a = [blr_params.a0 for _ in range(num_actions)]
+        invgamma_b = [blr_params.a0 for _ in range(num_actions)]
     # Initialize the parameters and copy them to the target network.
     U.initialize()
     update_target()
@@ -383,9 +389,19 @@ def learn(env,
             action_buffers[action].add(obs, action, rew, new_obs, float(done))
             if action_buffers[action]._next_idx == 0:
                 obses_a, actions_a, rewards_a, obses_tp1_a, dones_a = replay_buffer.get_samples([i for i in range(action_buffers_size)])
-                phiphiT_a, phiY_a = blr_ops_old(obses_a, actions_a, rewards_a, obses_tp1_a, dones_a)
+                phiphiT_a, phiY_a, YY_a = blr_ops_old(obses_a, actions_a, rewards_a, obses_tp1_a, dones_a)
                 phiphiT[action] += phiphiT_a
                 phiY[action] += phiY_a
+                YY[action] += YY_a
+
+                precision = phiphiT[action] + phiphiT0[action]
+                cov = np.linalg.pinv(precision)
+                mu = np.array(np.dot(cov,(phiY[action] + np.dot(phiphiT0[action], last_layer_weights[:,action]))))
+                invgamma_a[action] += 0.5*action_buffers_size
+                b_upd = 0.5 * YY[action]
+                b_upd += 0.5 * np.dot(last_layer_weights[:,action].T, np.dot(phiphiT0[action], last_layer_weights[:,action]))
+                b_upd -= 0.5 * np.dot(mu.T, np.dot(precision, mu))
+                invgamma_b[action] += b_upd
 
                 # old_phiphiT_inv_a = [np.tile(oppTi[action], (action_buffers_size,1,1)) for oppTi in old_phiphiT_inv]
                 # old_pseudo_count = blr_additions['old_pseudo_counts'](obses_a, *old_phiphiT_inv_a)
@@ -394,24 +410,25 @@ def learn(env,
                 #     idx = ((blr_counter-1)-i) % old_networks_num # arrange networks from newest to oldest
                 #     episode_pseudo_count[i][-1] += old_pseudo_count[idx]
 
-            if real_done:
-                for a in range(num_actions):
-                    if action_buffers[a]._next_idx != 0:
-                        obses_a, actions_a, rewards_a, obses_tp1_a, dones_a = replay_buffer.get_samples([i for i in range(action_buffers[a]._next_idx)])
-                        nk = obses_a.shape[0]
-
-                        # old_phiphiT_inv_a = [np.tile(oppTi[action],(nk,1,1)) for oppTi in old_phiphiT_inv]
-                        # old_pseudo_count = blr_additions['old_pseudo_counts'](obses_a, *old_phiphiT_inv_a)
-                        # old_pseudo_count = np.sum(old_pseudo_count, axis=-1)
-                        # for i in range(old_networks_num):
-                        #     idx = ((blr_counter-1)-i) % old_networks_num # arrange networks from newest to oldest
-                        #     episode_pseudo_count[i][-1] += old_pseudo_count[idx]
-
-                        phiphiT_a, phiY_a = blr_ops_old(obses_a, actions_a, rewards_a, obses_tp1_a, dones_a)
-                        phiphiT[a] += phiphiT_a
-                        phiY[a] += phiY_a
-
-                        action_buffers[a]._next_idx = 0
+            # if real_done:
+            #     for a in range(num_actions):
+            #         if action_buffers[a]._next_idx != 0:
+            #             obses_a, actions_a, rewards_a, obses_tp1_a, dones_a = replay_buffer.get_samples([i for i in range(action_buffers[a]._next_idx)])
+            #             nk = obses_a.shape[0]
+            #
+            #             # old_phiphiT_inv_a = [np.tile(oppTi[action],(nk,1,1)) for oppTi in old_phiphiT_inv]
+            #             # old_pseudo_count = blr_additions['old_pseudo_counts'](obses_a, *old_phiphiT_inv_a)
+            #             # old_pseudo_count = np.sum(old_pseudo_count, axis=-1)
+            #             # for i in range(old_networks_num):
+            #             #     idx = ((blr_counter-1)-i) % old_networks_num # arrange networks from newest to oldest
+            #             #     episode_pseudo_count[i][-1] += old_pseudo_count[idx]
+            #
+            #             phiphiT_a, phiY_a, YY_a = blr_ops_old(obses_a, actions_a, rewards_a, obses_tp1_a, dones_a)
+            #             phiphiT[a] += phiphiT_a
+            #             phiY[a] += phiY_a
+            #             YY[a] += YY_a
+            #
+            #             action_buffers[a]._next_idx = 0
 
 
             obs = new_obs
@@ -476,7 +493,7 @@ def learn(env,
                             phiphiT_inv[i] = np.linalg.pinv(phiphiT[i])
                     old_phiphiT_inv[blr_counter % 5] = phiphiT_inv
                     llw = sess.run(blr_additions['last_layer_weights'])
-                    phiphiT, phiY, phiphiT0, last_layer_weights = BayesRegression(phiphiT,phiY,replay_buffer,
+                    phiphiT, phiY, phiphiT0, last_layer_weights, YY, invgamma_a, invgamma_b = BayesRegression(phiphiT,phiY,replay_buffer,
                                                                  blr_additions['feature_extractor'],
                                                                  blr_additions['target_feature_extractor'], num_actions,
                                                                  blr_params,w_mu, w_cov,
@@ -497,6 +514,7 @@ def learn(env,
                     # sampling num_models samples of w
                     print(actions_hist)
                     actions_hist = [0. for _ in range(num_actions)]
+                    adaptive_sigma = True
                     for i in range(num_actions):
                         if prior == 'no prior' or last_layer_weights is None:
                             cov = np.linalg.inv(phiphiT[i])
@@ -523,19 +541,25 @@ def learn(env,
                             print("No valid prior")
                             exit(0)
 
+
+                        for j in range(num_models):
+                            if adaptive_sigma:
+                                sigma = invgamma_b[i] * invgamma.rvs(invgamma_a[i])
+                            else:
+                                sigma = blr_params.sigma
+                            try:
+                                w_sample[i, j] = np.random.multivariate_normal(mu, sigma*cov)
+                            except:
+                                w_sample[i, j] = mu
+                    # w_norms = [np.linalg.norm(w_sample[i]) for i in range(num_actions)]
                         if t % 7 == 0:
                             print("action {}".format(i))
                             print("cov norm:")
                             print(np.linalg.norm(cov))
+                            print("sigma")
+                            print(sigma)
                             print("cov norm times sigma:")
-                            print(np.linalg.norm(blr_params.sigma*cov))
-
-                        for j in range(num_models):
-                            try:
-                                w_sample[i, j] = np.random.multivariate_normal(mu, blr_params.sigma*cov)
-                            except:
-                                w_sample[i, j] = mu
-                    # w_norms = [np.linalg.norm(w_sample[i]) for i in range(num_actions)]
+                            print(np.linalg.norm(sigma*cov))
 
             if t > learning_starts and t % target_network_update_freq == 0:
                 # Update target network periodically.

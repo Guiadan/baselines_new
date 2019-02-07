@@ -561,8 +561,10 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
         if thompson:
             # Bayes Regression additions
             last_layer_weights = q_func_vars[-2] #target_q_func_vars[-2]
-            phiphiTop = tf.matmul(tf.transpose(phi_xt), phi_xt)
-            phiYop = tf.squeeze(tf.matmul(tf.expand_dims(q_t_selected_target,0), phi_xt))
+            phiphiT_op = tf.matmul(tf.transpose(phi_xt), phi_xt)
+            phiY_op = tf.squeeze(tf.matmul(tf.expand_dims(q_t_selected_target,0), phi_xt))
+            YY_op = tf.matmul(tf.expand_dims(q_t_selected_target,0), tf.expand_dims(q_t_selected_target,-1))
+
             feat_dim = phi_xt.shape[1].value
 
             feat = U.function([obs_t_input], phi_xt)
@@ -604,6 +606,7 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
 
             phiphiTold_op = tf.matmul(tf.transpose(phi_old), phi_old)
             phiYold_op = tf.squeeze(tf.matmul(tf.expand_dims(q_t_selected_target,0), phi_old))
+            YYold_op = tf.matmul(tf.expand_dims(q_t_selected_target,0), tf.expand_dims(q_t_selected_target,-1))
 
             sdp_ops = U.function(
                 inputs=[
@@ -627,7 +630,7 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
                     done_mask_ph,
                     importance_weights_ph
                 ],
-                outputs=[phiphiTop,phiYop]
+                outputs=[phiphiT_op, phiY_op, YY_op]
             )
             blr_ops_old = U.function(
                 inputs=[
@@ -638,7 +641,7 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
                     done_mask_ph,
                     importance_weights_ph
                 ],
-                outputs=[phiphiTold_op, phiYold_op]
+                outputs=[phiphiTold_op, phiYold_op, YYold_op]
             )
             old_q_func_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=tf.get_variable_scope().name + "/old_q_func")
             update_old_expr = []

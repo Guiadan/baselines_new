@@ -314,6 +314,9 @@ def BayesRegression(phiphiT, phiY, replay_buffer, dqn_feat, target_dqn_feat, num
         phiphiT *= (1-blr_param.alpha)*0
         phiY *= (1-blr_param.alpha)*0
 
+    YY = np.zeros(num_actions)
+    a = np.ones(num_actions)*blr_param.a0
+    b = np.ones(num_actions)*blr_param.b0
     obses_t, actions, rewards, obses_tp1, dones = replay_buffer.get_samples(idxes[:n_samples])
     n = np.zeros(num_actions)
     action_rewards = [0. for _ in range(num_actions)]
@@ -331,13 +334,23 @@ def BayesRegression(phiphiT, phiY, replay_buffer, dqn_feat, target_dqn_feat, num
         for k in range(num_actions):
             if obs_t[action == k].shape[0] < 1:
                 continue
-            phiphiTk, phiYk = blr_ops(obs_t[action == k], action[action == k], reward[action == k], obs_tp1[action == k], done[action == k])
+            phiphiTk, phiYk, YYk = blr_ops(obs_t[action == k], action[action == k], reward[action == k], obs_tp1[action == k], done[action == k])
             phiphiT[k] += phiphiTk
             phiY[k] += phiYk
+            YY[k] += YYk
             n[k] += obs_t[action == k].shape[0]
             action_rewards[k] += sum(reward[action == k])
+        for k in range(num_actions):
+            precision = phiphiT[k] + phiphiT0[k]
+            cov = np.linalg.pinv(precision)
+            mu = np.array(np.dot(cov,(phiY[k] + np.dot(phiphiT0[k], last_layer_weights[:,k]))))
+            a[k] += 0.5*n[k]
+            b_upd = 0.5 * YY[k]
+            b_upd += 0.5 * np.dot(last_layer_weights[:,k].T, np.dot(phiphiT0[k], last_layer_weights[:,k]))
+            b_upd -= 0.5 * np.dot(mu.T, np.dot(precision, mu))
+            b[k] += b_upd
     print(n, np.sum(n))
-    return phiphiT, phiY, phiphiT0, last_layer_weights
+    return phiphiT, phiY, phiphiT0, last_layer_weights, YY, a, b
 
     # old BayesReg func
     # for i in range(num_actions):
