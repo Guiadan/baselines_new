@@ -110,7 +110,7 @@ def information_transfer_linear(phiphiT, dqn_feat, old_feat, num_actions, feat_d
         phi_m = None
         xi_m = None
         mi = obses_t_per_a[i].shape[0]
-        M = min([10000, mi])
+        M = min([5000, mi])
         if M < feat_dim:
             phiphiT0[i] = 1/0.001 * np.eye(feat_dim)
             continue
@@ -123,7 +123,7 @@ def information_transfer_linear(phiphiT, dqn_feat, old_feat, num_actions, feat_d
             if phi_m is None:
                 phi_m = phi_t
             else:
-                phi_m = np.concatenate([phi_m,phi_t],axis=-1)
+                phi_m = np.concatenate([phi_m, phi_t],axis=-1)
             if xi_m is None:
                 xi_m = xi_t
             else:

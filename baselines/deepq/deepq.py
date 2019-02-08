@@ -29,7 +29,7 @@ first_time = True
 
 class BLRParams(object):
     def __init__(self):
-        self.sigma = 1 #0.001 W prior variance
+        self.sigma = 10 #0.001 W prior variance
         self.sigma_n = 1 # noise variance
         self.alpha = .01 # forgetting factor
         if debug_flag:
@@ -43,8 +43,8 @@ class BLRParams(object):
         self.feat_dim = 128 #256
         self.first_time = True
         self.no_prior = True
-        self.a0 = 6
-        self.b0 = 6
+        self.a0 = 7
+        self.b0 = 60
 
 
 
@@ -514,7 +514,10 @@ def learn(env,
                     # sampling num_models samples of w
                     print(actions_hist)
                     actions_hist = [0. for _ in range(num_actions)]
-                    adaptive_sigma = True
+                    if t > 1000000:
+                        adaptive_sigma = True
+                    else:
+                        adaptive_sigma = False
                     for i in range(num_actions):
                         if prior == 'no prior' or last_layer_weights is None:
                             cov = np.linalg.inv(phiphiT[i])
