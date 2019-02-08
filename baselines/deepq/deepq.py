@@ -290,7 +290,7 @@ def learn(env,
             phiphiT_inv[i] = blr_params.sigma*np.eye(feat_dim)
         old_phiphiT_inv = [phiphiT_inv for i in range(5)]
 
-        phiY = np.zeros((num_actions, feat_dim))
+        phiY = np.zeros((num_actions, feat_dim), dtype=np.float32)
         YY = np.zeros(num_actions)
 
         model_idx = np.random.randint(0,num_models,size=num_actions)
@@ -436,8 +436,8 @@ def learn(env,
             # episode_Q_estimates[-1] += estimate
             unclipped_episode_rewards[-1] += unclipped_rew
 
-            if t % 250000 == 0 and t > 0:
-                eval_flag = True
+            # if t % 250000 == 0 and t > 0:
+            #     eval_flag = True
 
             if done:
                 obs = env.reset()
@@ -449,26 +449,34 @@ def learn(env,
                     # for i in range(old_networks_num):
                     #     episode_pseudo_count[i].append(0.0)
                     # every time full episode ends run eval episode
-                    if eval_flag:
-                        real_done = False
-                        eval_rewards = [0.0]
-                        for te in range(125000):
-                            action, _ = blr_additions['eval_act'](np.array(obs)[None])
-                            new_obs, unclipped_rew, done_list, _ = env.step(action)
-                            done, real_done = done_list
-                            eval_rewards[-1] += unclipped_rew
-                            obs = new_obs
-                            if done:
-                                obs = env.reset()
-                            if real_done:
-                                eval_rewards.append(0.0)
-                        obs = env.reset()
-                        eval_rewards.pop()
-                        mean_reward_eval = round(np.mean(eval_rewards), 1)
-                        logger.record_tabular("mean eval episode reward", mean_reward_eval)
-                        logger.dump_tabular()
-                        eval_flag = False
-
+                    # if eval_flag:
+                    #     real_done = False
+                    #     eval_rewards = [0.0]
+                    #     for te in range(125000):
+                    #         action, _ = blr_additions['eval_act'](np.array(obs)[None])
+                    #         new_obs, unclipped_rew, done_list, _ = env.step(action)
+                    #         done, real_done = done_list
+                    #         eval_rewards[-1] += unclipped_rew
+                    #         obs = new_obs
+                    #         if done:
+                    #             obs = env.reset()
+                    #         if real_done:
+                    #             eval_rewards.append(0.0)
+                    #     obs = env.reset()
+                    #     eval_rewards.pop()
+                    #     mean_reward_eval = round(np.mean(eval_rewards), 1)
+                    #     logger.record_tabular("mean eval episode reward", mean_reward_eval)
+                    #     logger.dump_tabular()
+                    #     eval_flag = False
+                    real_done = False
+                    while not real_done:
+                        action, _ = blr_additions['eval_act'](np.array(obs)[None])
+                        new_obs, unclipped_rew, done_list, _ = env.step(action)
+                        done, real_done = done_list
+                        eval_rewards[-1] += unclipped_rew
+                        obs = new_obs
+                    eval_rewards.append(0.0)
+                    obs = env.reset()
 
             if t > learning_starts and t % train_freq == 0:
                 # Minimize the error in Bellman's equation on a batch sampled from replay buffer.
@@ -533,7 +541,6 @@ def learn(env,
                                 cov = np.linalg.pinv(phiphiT[i] + phiphiT0)
                             mu = np.array(np.dot(cov,(phiY[i] + np.dot(phiphiT0, last_layer_weights[:,i]))))
                         elif prior == 'sdp' or prior == 'linear':
-                            print(prior)
                             try:
                                 cov = np.linalg.inv(phiphiT[i] + phiphiT0[i])
                             except:
@@ -573,8 +580,8 @@ def learn(env,
             mean_10ep_reward = round(np.mean(episode_rewards[-11:-1]), 1)
             mean_100ep_reward_unclipped = round(np.mean(unclipped_episode_rewards[-101:-1]), 1)
             mean_10ep_reward_unclipped = round(np.mean(unclipped_episode_rewards[-11:-1]), 1)
-            # mean_100ep_reward_eval = round(np.mean(eval_rewards[-101:-1]), 1)
-            # mean_10ep_reward_eval = round(np.mean(eval_rewards[-11:-1]), 1)
+            mean_100ep_reward_eval = round(np.mean(eval_rewards[-101:-1]), 1)
+            mean_10ep_reward_eval = round(np.mean(eval_rewards[-11:-1]), 1)
             # mean_100ep_est = round(np.mean(episode_Q_estimates[-101:-1]), 1)
             # mean_10ep_est = round(np.mean(episode_Q_estimates[-11:-1]), 1)
             num_episodes = len(episode_rewards)
