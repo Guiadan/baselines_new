@@ -343,9 +343,10 @@ def learn(env,
         actions_hist_total = [0 for _ in range(num_actions)]
         last_layer_weights_decaying_average = None
         blr_counter = 0
-        action_buffers_size = 128
+        action_buffers_size = 1024
         action_buffers = [ReplayBuffer(action_buffers_size) for _ in range(num_actions)]
         eval_flag = False
+        eval_counter = 0
         for t in tqdm(range(total_timesteps)):
 
             if callback is not None:
@@ -469,16 +470,18 @@ def learn(env,
                     #     logger.record_tabular("mean eval episode reward", mean_reward_eval)
                     #     logger.dump_tabular()
                     #     eval_flag = False
-                    if t > learning_starts:
-                        real_done = False
-                        while not real_done:
-                            action, _ = blr_additions['eval_act'](np.array(obs)[None])
-                            new_obs, unclipped_rew, done_list, _ = env.step(action)
-                            done, real_done = done_list
-                            eval_rewards[-1] += unclipped_rew
-                            obs = new_obs
-                        eval_rewards.append(0.0)
-                        obs = env.reset()
+                    eval_counter += 1
+                    if eval_counter % 10 == 0:
+                        if t > learning_starts:
+                            real_done = False
+                            while not real_done:
+                                action, _ = blr_additions['eval_act'](np.array(obs)[None])
+                                new_obs, unclipped_rew, done_list, _ = env.step(action)
+                                done, real_done = done_list
+                                eval_rewards[-1] += unclipped_rew
+                                obs = new_obs
+                            eval_rewards.append(0.0)
+                            obs = env.reset()
 
             if t > learning_starts and t % train_freq == 0:
                 # Minimize the error in Bellman's equation on a batch sampled from replay buffer.
