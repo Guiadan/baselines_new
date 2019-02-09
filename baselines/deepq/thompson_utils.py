@@ -274,7 +274,7 @@ def BayesRegressionOld(phiphiT, phiY, replay_buffer, dqn_feat, target_dqn_feat, 
     # last_layer_weights are the target last layer weights
     feat_dim = blr_param.feat_dim
 
-    n_samples = min([blr_param.batch_size, len(replay_buffer)])
+    n_samples = min([200000, len(replay_buffer)])
     idxes = [i for i in range(n_samples)]
     obses_t, actions, rewards, obses_tp1, dones = replay_buffer.get_samples(idxes)
     shuffle(idxes)
