@@ -121,6 +121,8 @@ def information_transfer_linear(phiphiT, dqn_feat, old_feat, num_actions, feat_d
         for m in range(M // mini_batch_size + 1):
             start_idx = m*mini_batch_size
             end_idx = min([(m+1)*mini_batch_size, M])
+            if start_idx == end_idx:
+                continue
             phi_t = old_feat(obses_t_per_a[i][index_per_a[i][start_idx:end_idx]][None]).T
             xi_t = dqn_feat(obses_t_per_a[i][index_per_a[i][start_idx:end_idx]][None]).T
             if phi_m is None:
