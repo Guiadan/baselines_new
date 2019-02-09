@@ -308,6 +308,7 @@ def learn(env,
     update_target()
     if thompson:
         blr_additions['update_old']()
+        blr_additions['update_old_target']()
         if blr_additions['old_networks'] is not None:
             for key in blr_additions['old_networks'].keys():
                 blr_additions['old_networks'][key]["update"]()
@@ -515,6 +516,7 @@ def learn(env,
                     if seed is not None:
                         print('seed is {}'.format(seed))
                     blr_additions['update_old']()
+                    blr_additions['update_old_target']()
                     if blr_additions['old_networks'] is not None:
                         blr_additions['old_networks'][blr_counter % 5]["update"]()
 
