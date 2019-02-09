@@ -89,22 +89,24 @@ information_transfer_new.failure_num = 0
 information_transfer_new.calls = 0
 information_transfer_new.last_success = 0
 
-def information_transfer_linear(phiphiT, dqn_feat, old_feat, num_actions, feat_dim,replay_buffer, phiY):
-    n_samples = min([300000, len(replay_buffer)])
-    idxes = [i for i in range(n_samples)]
-    obses_t, actions, rewards, obses_tp1, dones = replay_buffer.get_samples(idxes)
-    obses_t_per_a, actions_per_a, rewards_per_a, obses_tp1_per_a, dones_per_a = [], [], [], [], []
-    idxes_per_a = []
+def information_transfer_linear(phiphiT, dqn_feat, old_feat, num_actions, feat_dim,actions_buffers, phiY):
+    # n_samples = min([300000, len(replay_buffer)])
+    # idxes = [i for i in range(n_samples)]
+    # obses_t, actions, rewards, obses_tp1, dones = replay_buffer.get_samples(idxes)
+    # obses_t_per_a, actions_per_a, rewards_per_a, obses_tp1_per_a, dones_per_a = [], [], [], [], []
+    # idxes_per_a = []
+    obses_t_per_a, actions_per_a, rewards_per_a, obses_tp1_per_a, dones_per_a, index_per_a = actions_buffers
     d1 = datetime.now()
-    for i in range(num_actions):
-        obses_t_per_a.append(obses_t[actions == i])
-        actions_per_a.append(actions[actions == i])
-        rewards_per_a.append(rewards[actions == i])
-        obses_tp1_per_a.append(obses_tp1[actions == i])
-        dones_per_a.append(dones[actions == i])
-        ix = [j for j in range(obses_t[actions == i].shape[0])]
-        shuffle(ix)
-        idxes_per_a.append(ix)
+    # for i in range(num_actions):
+    #     obses_t_per_a.append(obses_t[actions == i])
+    #     actions_per_a.append(actions[actions == i])
+    #     rewards_per_a.append(rewards[actions == i])
+    #     obses_tp1_per_a.append(obses_tp1[actions == i])
+    #     dones_per_a.append(dones[actions == i])
+    #     ix = [j for j in range(obses_t[actions == i].shape[0])]
+    #     shuffle(ix)
+    #     idxes_per_a.append(ix)
+
     phiphiT0 = np.zeros_like(phiphiT)
     mu0 = np.zeros_like(phiY)
     for i in range(num_actions):
@@ -119,8 +121,8 @@ def information_transfer_linear(phiphiT, dqn_feat, old_feat, num_actions, feat_d
         for m in range(M // mini_batch_size + 1):
             start_idx = m*mini_batch_size
             end_idx = min([(m+1)*mini_batch_size, M])
-            phi_t = old_feat(obses_t_per_a[i][idxes_per_a[i][start_idx:end_idx]][None]).T
-            xi_t = dqn_feat(obses_t_per_a[i][idxes_per_a[i][start_idx:end_idx]][None]).T
+            phi_t = old_feat(obses_t_per_a[i][index_per_a[i][start_idx:end_idx]][None]).T
+            xi_t = dqn_feat(obses_t_per_a[i][index_per_a[i][start_idx:end_idx]][None]).T
             if phi_m is None:
                 phi_m = phi_t
             else:
@@ -429,6 +431,7 @@ def BayesRegression(phiphiT, phiY, replay_buffer, dqn_feat, target_dqn_feat, num
         shuffle(ix)
         idxes_per_a.append(ix)
 
+    actions_buffers = [obses_t_per_a, actions_per_a, rewards_per_a, obses_tp1_per_a, dones_per_a, idxes_per_a]
 
     phiphiT0 = None
     if prior == "no prior":
@@ -440,7 +443,7 @@ def BayesRegression(phiphiT, phiY, replay_buffer, dqn_feat, target_dqn_feat, num
     elif prior == "linear":
         print("linear")
         phiphiT0, last_layer_weights = information_transfer_linear(phiphiT, dqn_feat, old_feat, num_actions, feat_dim,
-                                                                   replay_buffer, phiY)
+                                                                   actions_buffers, phiY)
         phiphiT *= (1 - blr_param.alpha) * 0
         phiY *= (1 - blr_param.alpha) * 0
     elif prior == "decay":

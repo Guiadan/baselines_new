@@ -23,7 +23,7 @@ from baselines.deepq.thompson_utils import BayesRegression
 #additions
 from scipy.stats import invgamma
 from tqdm import tqdm
-debug_flag = False
+debug_flag = True
 structred_learning = False
 first_time = True
 
@@ -468,15 +468,16 @@ def learn(env,
                     #     logger.record_tabular("mean eval episode reward", mean_reward_eval)
                     #     logger.dump_tabular()
                     #     eval_flag = False
-                    real_done = False
-                    while not real_done:
-                        action, _ = blr_additions['eval_act'](np.array(obs)[None])
-                        new_obs, unclipped_rew, done_list, _ = env.step(action)
-                        done, real_done = done_list
-                        eval_rewards[-1] += unclipped_rew
-                        obs = new_obs
-                    eval_rewards.append(0.0)
-                    obs = env.reset()
+                    if t > learning_starts:
+                        real_done = False
+                        while not real_done:
+                            action, _ = blr_additions['eval_act'](np.array(obs)[None])
+                            new_obs, unclipped_rew, done_list, _ = env.step(action)
+                            done, real_done = done_list
+                            eval_rewards[-1] += unclipped_rew
+                            obs = new_obs
+                        eval_rewards.append(0.0)
+                        obs = env.reset()
 
             if t > learning_starts and t % train_freq == 0:
                 # Minimize the error in Bellman's equation on a batch sampled from replay buffer.
@@ -600,8 +601,8 @@ def learn(env,
                 logger.record_tabular("mean 10 episode reward", mean_10ep_reward)
                 logger.record_tabular("mean 100 unclipped episode reward", mean_100ep_reward_unclipped)
                 logger.record_tabular("mean 10 unclipped episode reward", mean_10ep_reward_unclipped)
-                # logger.record_tabular("mean 100 eval episode reward", mean_100ep_reward_eval)
-                # logger.record_tabular("mean 10 eval episode reward", mean_10ep_reward_eval)
+                logger.record_tabular("mean 100 eval episode reward", mean_100ep_reward_eval)
+                logger.record_tabular("mean 10 eval episode reward", mean_10ep_reward_eval)
                 # for i in range(old_networks_num):
                 #     logger.record_tabular("mean 10 episode pseudo count for -{} net".format(i+1), mean_10ep_pseudo_count[i])
                 #     logger.record_tabular("mean 100 episode pseudo count for -{} net".format(i+1), mean_100ep_pseudo_count[i])
