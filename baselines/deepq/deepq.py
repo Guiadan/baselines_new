@@ -13,7 +13,7 @@ from baselines.common.schedules import LinearSchedule
 from baselines.common import set_global_seeds
 
 from baselines import deepq
-from baselines.deepq.replay_buffer import ReplayBuffer, PrioritizedReplayBuffer
+from baselines.deepq.replay_buffer import ReplayBuffer, PrioritizedReplayBuffer, ReplayBufferPerAction
 from baselines.deepq.utils import ObservationInput
 
 from baselines.common.tf_util import get_session
@@ -264,7 +264,8 @@ def learn(env,
                                        initial_p=prioritized_replay_beta0,
                                        final_p=1.0)
     else:
-        replay_buffer = ReplayBuffer(buffer_size)
+        # replay_buffer = ReplayBuffer(buffer_size)
+        replay_buffer = ReplayBufferPerAction(buffer_size, env.action_space.n)
         beta_schedule = None
     # Create the schedule for exploration starting from 1.
     exploration = LinearSchedule(schedule_timesteps=int(exploration_fraction * total_timesteps),

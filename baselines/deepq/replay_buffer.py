@@ -191,3 +191,94 @@ class PrioritizedReplayBuffer(ReplayBuffer):
             self._it_min[idx] = priority ** self._alpha
 
             self._max_priority = max(self._max_priority, priority)
+
+
+
+class ReplayBufferPerAction(object):
+    def __init__(self, size, num_actions):
+        """Create Replay buffer.
+
+        Parameters
+        ----------
+        size: int
+            Max number of transitions to store in the buffer. When the buffer
+            overflows the old memories are dropped.
+        """
+        self._storage = [ [] for _ in range(num_actions)]
+        self._maxsize = size
+        self._next_idx = [0 for _ in range(num_actions)]
+        self.num_actions = num_actions
+
+    def __len__(self):
+        l = sum([len(strg) for strg in self._storage])
+        return l
+
+    def add(self, obs_t, action, reward, obs_tp1, done):
+        data = (obs_t, action, reward, obs_tp1, done)
+
+        if self._next_idx[action] >= len(self._storage[action]):
+            self._storage[action].append(data)
+        else:
+            self._storage[action][self._next_idx[action]] = data
+        self._next_idx[action] = (self._next_idx[action] + 1) % self._maxsize
+
+    def _encode_sample(self, idxes):
+        obses_t, actions, rewards, obses_tp1, dones = [], [], [], [], []
+        buffers_len = [len(buf) for buf in self._storage]
+        buffers_len.insert(0, 0)
+        buffers_len = np.cumsum(buffers_len)
+        for i in idxes:
+            for a in range(self.num_actions):
+                if i < buffers_len[a+1] and i >= buffers_len[a]:
+                    try:
+                        data = self._storage[a][i-buffers_len[a]]
+                    except:
+                        pass
+                    obs_t, action, reward, obs_tp1, done = data
+                    obses_t.append(np.array(obs_t, copy=False))
+                    actions.append(np.array(action, copy=False))
+                    rewards.append(reward)
+                    obses_tp1.append(np.array(obs_tp1, copy=False))
+                    dones.append(done)
+        return np.array(obses_t), np.array(actions), np.array(rewards), np.array(obses_tp1), np.array(dones)
+
+    def sample(self, batch_size):
+        """Sample a batch of experiences.
+
+        Parameters
+        ----------
+        batch_size: int
+            How many transitions to sample.
+
+        Returns
+        -------
+        obs_batch: np.array
+            batch of observations
+        act_batch: np.array
+            batch of actions executed given obs_batch
+        rew_batch: np.array
+            rewards received as results of executing act_batch
+        next_obs_batch: np.array
+            next set of observations seen after executing act_batch
+        done_mask: np.array
+            done_mask[i] = 1 if executing act_batch[i] resulted in
+            the end of an episode and 0 otherwise.
+        """
+        idxes = [random.randint(0, len(self._storage) - 1) for _ in range(batch_size)]
+        return self._encode_sample(idxes)
+
+    def get_samples(self, idxes=[]):
+        return self._encode_sample(idxes)
+
+    def n_samples_per_action(self, n):
+        buffers_len = [len(buf) for buf in self._storage]
+        if n > min(buffers_len):
+            n = min(buffers_len) #we want to make sure every action gets the same number of samples
+        buffers_len.insert(0, 0)
+        buffers_len = np.cumsum(buffers_len)
+        idxes = []
+        for a in range(self.num_actions):
+            idxes.extend([random.randint(buffers_len[a], buffers_len[a+1] - 1) for _ in range(n)])
+        return self._encode_sample(idxes)
+
+

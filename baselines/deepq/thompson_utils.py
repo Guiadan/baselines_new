@@ -419,8 +419,9 @@ def BayesRegression(phiphiT, phiY, replay_buffer, dqn_feat, target_dqn_feat, num
     feat_dim = blr_param.feat_dim
 
     n_samples = min([blr_param.batch_size, len(replay_buffer)])
-    idxes = [i for i in range(n_samples)]
-    obses_t, actions, rewards, obses_tp1, dones = replay_buffer.get_samples(idxes)
+    # idxes = [i for i in range(n_samples)]
+    # obses_t, actions, rewards, obses_tp1, dones = replay_buffer.get_samples(idxes)
+    obses_t, actions, rewards, obses_tp1, dones = replay_buffer.n_samples_per_action(n=20000)
     obses_t_per_a, actions_per_a, rewards_per_a, obses_tp1_per_a, dones_per_a = [], [], [], [], []
     idxes_per_a = []
     for i in range(num_actions):
