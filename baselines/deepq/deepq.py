@@ -526,7 +526,7 @@ def learn(env,
             if thompson:
                 if t > 0 and t % blr_params.sample_w == 0:
                     # sampling num_models samples of w
-                    if t % 10 == 0:
+                    if t % 10000 == 0:
                         print(actions_hist)
                     actions_hist = [0 for _ in range(num_actions)]
                     if t > 1000000:
