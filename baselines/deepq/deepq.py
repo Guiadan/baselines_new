@@ -23,7 +23,7 @@ from baselines.deepq.thompson_utils import BayesRegression
 #additions
 from scipy.stats import invgamma
 from tqdm import tqdm
-debug_flag = False
+debug_flag = True
 structred_learning = False
 first_time = True
 
@@ -37,7 +37,7 @@ class BLRParams(object):
             self.sample_w = 1000
         else:
             self.sample_w = 1000
-            self.update_w = 5 # multiplied by update target frequency
+            self.update_w = 1 # multiplied by update target frequency
         self.batch_size = 1000000# batch size to do blr from
         self.gamma = 0.99 #dqn gamma
         self.feat_dim = 64 #256
@@ -526,13 +526,16 @@ def learn(env,
             if thompson:
                 if t > 0 and t % blr_params.sample_w == 0:
                     # sampling num_models samples of w
-                    if t % 10000 == 0:
+                    if debug:
                         print(actions_hist)
-                    actions_hist = [0 for _ in range(num_actions)]
-                    if t > 1000000:
-                        adaptive_sigma = True
                     else:
-                        adaptive_sigma = False
+                        if t % 10000 == 0:
+                            print(actions_hist)
+                    actions_hist = [0 for _ in range(num_actions)]
+                    # if t > 1000000:
+                    adaptive_sigma = True
+                    # else:
+                    #     adaptive_sigma = False
                     cov_norms = []
                     for i in range(num_actions):
                         if prior == 'no prior' or last_layer_weights is None:
