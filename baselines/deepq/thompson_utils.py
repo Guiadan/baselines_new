@@ -95,7 +95,7 @@ def information_transfer_linear(phiphiT, dqn_feat, old_feat, num_actions, feat_d
     # obses_t, actions, rewards, obses_tp1, dones = replay_buffer.get_samples(idxes)
     # obses_t_per_a, actions_per_a, rewards_per_a, obses_tp1_per_a, dones_per_a = [], [], [], [], []
     # idxes_per_a = []
-    obses_t_per_a, actions_per_a, rewards_per_a, obses_tp1_per_a, dones_per_a, index_per_a = actions_buffers
+    obses_t_per_a, actions_per_a, rewards_per_a, obses_tp1_per_a, dones_per_a = actions_buffers
     d1 = datetime.now()
     # for i in range(num_actions):
     #     obses_t_per_a.append(obses_t[actions == i])
@@ -123,8 +123,8 @@ def information_transfer_linear(phiphiT, dqn_feat, old_feat, num_actions, feat_d
             end_idx = min([(m+1)*mini_batch_size, M])
             if start_idx == end_idx:
                 continue
-            phi_t = old_feat(obses_t_per_a[i][index_per_a[i][start_idx:end_idx]][None]).T
-            xi_t = dqn_feat(obses_t_per_a[i][index_per_a[i][start_idx:end_idx]][None]).T
+            phi_t = old_feat(obses_t_per_a[i][start_idx:end_idx][None]).T
+            xi_t = dqn_feat(obses_t_per_a[i][start_idx:end_idx][None]).T
             if phi_m is None:
                 phi_m = phi_t
             else:
@@ -421,20 +421,22 @@ def BayesRegression(phiphiT, phiY, replay_buffer, dqn_feat, target_dqn_feat, num
     n_samples = min([blr_param.batch_size, len(replay_buffer)])
     # idxes = [i for i in range(n_samples)]
     # obses_t, actions, rewards, obses_tp1, dones = replay_buffer.get_samples(idxes)
-    obses_t, actions, rewards, obses_tp1, dones = replay_buffer.n_samples_per_action(n=20000)
-    obses_t_per_a, actions_per_a, rewards_per_a, obses_tp1_per_a, dones_per_a = [], [], [], [], []
-    idxes_per_a = []
-    for i in range(num_actions):
-        obses_t_per_a.append(obses_t[actions == i])
-        actions_per_a.append(actions[actions == i])
-        rewards_per_a.append(rewards[actions == i])
-        obses_tp1_per_a.append(obses_tp1[actions == i])
-        dones_per_a.append(dones[actions == i])
-        ix = [j for j in range(obses_t[actions == i].shape[0])]
-        shuffle(ix)
-        idxes_per_a.append(ix)
+    # obses_t, actions, rewards, obses_tp1, dones = replay_buffer.n_samples_per_action(n=20000)
+    # obses_t_per_a, actions_per_a, rewards_per_a, obses_tp1_per_a, dones_per_a = [], [], [], [], []
 
-    actions_buffers = [obses_t_per_a, actions_per_a, rewards_per_a, obses_tp1_per_a, dones_per_a, idxes_per_a]
+    obses_t_per_a, actions_per_a, rewards_per_a, obses_tp1_per_a, dones_per_a = replay_buffer.n_samples_per_action(n=100000)
+    # idxes_per_a = []
+    # for i in range(num_actions):
+    #     obses_t_per_a.append(obses_t[actions == i])
+    #     actions_per_a.append(actions[actions == i])
+    #     rewards_per_a.append(rewards[actions == i])
+    #     obses_tp1_per_a.append(obses_tp1[actions == i])
+    #     dones_per_a.append(dones[actions == i])
+    #     ix = [j for j in range(obses_t[actions == i].shape[0])]
+    #     shuffle(ix)
+    #     idxes_per_a.append(ix)
+
+    actions_buffers = [obses_t_per_a, actions_per_a, rewards_per_a, obses_tp1_per_a, dones_per_a]#, idxes_per_a]
 
     phiphiT0 = None
     if prior == "no prior":
@@ -498,17 +500,22 @@ def BayesRegression(phiphiT, phiY, replay_buffer, dqn_feat, target_dqn_feat, num
         for m in range(M // mini_batch_size + 1):
             start_idx = m*mini_batch_size
             end_idx = min([(m+1)*mini_batch_size, M])
-            phiphiTm, phiYm, YYm = blr_ops(obses_t_per_a[i][idxes_per_a[i][start_idx:end_idx]],
-                                           actions_per_a[i][idxes_per_a[i][start_idx:end_idx]],
-                                           rewards_per_a[i][idxes_per_a[i][start_idx:end_idx]],
-                                           obses_tp1_per_a[i][idxes_per_a[i][start_idx:end_idx]],
-                                           dones_per_a[i][idxes_per_a[i][start_idx:end_idx]])
+            # phiphiTm, phiYm, YYm = blr_ops(obses_t_per_a[i][idxes_per_a[i][start_idx:end_idx]],
+            #                                actions_per_a[i][idxes_per_a[i][start_idx:end_idx]],
+            #                                rewards_per_a[i][idxes_per_a[i][start_idx:end_idx]],
+            #                                obses_tp1_per_a[i][idxes_per_a[i][start_idx:end_idx]],
+            #                                dones_per_a[i][idxes_per_a[i][start_idx:end_idx]])
+            phiphiTm, phiYm, YYm = blr_ops(obses_t_per_a[i][start_idx:end_idx],
+                                           actions_per_a[i][start_idx:end_idx],
+                                           rewards_per_a[i][start_idx:end_idx],
+                                           obses_tp1_per_a[i][start_idx:end_idx],
+                                           dones_per_a[i][start_idx:end_idx])
             phiphiT[i] += phiphiTm
             phiY[i] += phiYm
             YY[i] += YYm
             n[i] += end_idx - start_idx
 
-            action_rewards[i] += sum(rewards_per_a[i][idxes_per_a[i][start_idx:end_idx]])
+            action_rewards[i] += sum(rewards_per_a[i][start_idx:end_idx])
 
     for k in range(num_actions):
         precision = phiphiT[k] + phiphiT0[k]
@@ -521,5 +528,6 @@ def BayesRegression(phiphiT, phiY, replay_buffer, dqn_feat, target_dqn_feat, num
         b[k] += b_upd
 
     print(n, np.sum(n))
+    print(action_rewards)
     return phiphiT, phiY, phiphiT0, last_layer_weights, YY, a, b
 

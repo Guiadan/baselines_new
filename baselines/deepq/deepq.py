@@ -13,7 +13,7 @@ from baselines.common.schedules import LinearSchedule
 from baselines.common import set_global_seeds
 
 from baselines import deepq
-from baselines.deepq.replay_buffer import ReplayBuffer, PrioritizedReplayBuffer, ReplayBufferPerAction
+from baselines.deepq.replay_buffer import ReplayBuffer, PrioritizedReplayBuffer, ReplayBufferPerAction, ReplayBufferPerActionNew
 from baselines.deepq.utils import ObservationInput
 
 from baselines.common.tf_util import get_session
@@ -36,11 +36,11 @@ class BLRParams(object):
             self.update_w = 1 # multiplied by update target frequency
             self.sample_w = 1000
         else:
-            self.sample_w = 10000
+            self.sample_w = 1000
             self.update_w = 5 # multiplied by update target frequency
         self.batch_size = 1000000# batch size to do blr from
         self.gamma = 0.99 #dqn gamma
-        self.feat_dim = 128 #256
+        self.feat_dim = 64 #256
         self.first_time = True
         self.no_prior = True
         self.a0 = 7
@@ -265,7 +265,7 @@ def learn(env,
                                        final_p=1.0)
     else:
         # replay_buffer = ReplayBuffer(buffer_size)
-        replay_buffer = ReplayBufferPerAction(buffer_size, env.action_space.n)
+        replay_buffer = ReplayBufferPerActionNew(buffer_size, env.action_space.n)
         beta_schedule = None
     # Create the schedule for exploration starting from 1.
     exploration = LinearSchedule(schedule_timesteps=int(exploration_fraction * total_timesteps),
@@ -295,7 +295,6 @@ def learn(env,
         YY = np.zeros(num_actions)
 
         model_idx = np.random.randint(0,num_models,size=num_actions)
-        w_norms = [np.linalg.norm(w_sample[i,model_idx[i]]) for i in range(num_actions)]
         blr_ops = blr_additions['blr_ops']
         blr_ops_old = blr_additions['blr_ops_old']
 
@@ -533,6 +532,7 @@ def learn(env,
                         adaptive_sigma = True
                     else:
                         adaptive_sigma = False
+                    cov_norms = []
                     for i in range(num_actions):
                         if prior == 'no prior' or last_layer_weights is None:
                             cov = np.linalg.inv(phiphiT[i])
@@ -551,7 +551,7 @@ def learn(env,
                             try:
                                 cov = np.linalg.inv(phiphiT[i] + phiphiT0[i])
                             except:
-                                print("singular matrix")
+                                # print("singular matrix")
                                 cov = np.linalg.pinv(phiphiT[i] + phiphiT0[i])
                             mu = np.array(np.dot(cov,(phiY[i] + np.dot(phiphiT0[i], last_layer_weights[:,i]))))
                         else:
@@ -568,15 +568,12 @@ def learn(env,
                                 w_sample[i, j] = np.random.multivariate_normal(mu, sigma*cov)
                             except:
                                 w_sample[i, j] = mu
-                    # w_norms = [np.linalg.norm(w_sample[i]) for i in range(num_actions)]
-                        if t % 7 == 0:
-                            print("action {}".format(i))
-                            print("cov norm:")
-                            print(np.linalg.norm(cov))
-                            print("sigma")
-                            print(sigma)
-                            print("cov norm times sigma:")
-                            print(np.linalg.norm(sigma*cov))
+
+                        cov_norms.append(np.linalg.norm(sigma*cov))
+
+                    if t % 7 == 0:
+                        for i, cov_norm in enumerate(cov_norms):
+                            print("cov*sigma norm for action {}: {}, visits: {}".format(i,cov_norm, len(replay_buffer.buffers[i])))
 
             if t > learning_starts and t % target_network_update_freq == 0:
                 # Update target network periodically.
