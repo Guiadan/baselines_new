@@ -23,7 +23,7 @@ from baselines.deepq.thompson_utils import BayesRegression
 #additions
 from scipy.stats import invgamma
 from tqdm import tqdm
-debug_flag = True
+debug_flag = False
 structred_learning = False
 first_time = True
 
@@ -36,7 +36,7 @@ class BLRParams(object):
             self.update_w = 1 # multiplied by update target frequency
             self.sample_w = 1000
         else:
-            self.sample_w = 1000
+            self.sample_w = 10000
             self.update_w = 1 # multiplied by update target frequency
         self.batch_size = 1000000# batch size to do blr from
         self.gamma = 0.99 #dqn gamma
@@ -470,18 +470,18 @@ def learn(env,
                     #     logger.record_tabular("mean eval episode reward", mean_reward_eval)
                     #     logger.dump_tabular()
                     #     eval_flag = False
-                    eval_counter += 1
-                    if eval_counter % 10 == 0:
-                        if t > learning_starts:
-                            real_done = False
-                            while not real_done:
-                                action, _ = blr_additions['eval_act'](np.array(obs)[None])
-                                new_obs, unclipped_rew, done_list, _ = env.step(action)
-                                done, real_done = done_list
-                                eval_rewards[-1] += unclipped_rew
-                                obs = new_obs
-                            eval_rewards.append(0.0)
-                            obs = env.reset()
+                    # eval_counter += 1
+                    # if eval_counter % 10 == 0:
+                    #     if t > learning_starts:
+                    #         real_done = False
+                    #         while not real_done:
+                    #             action, _ = blr_additions['eval_act'](np.array(obs)[None])
+                    #             new_obs, unclipped_rew, done_list, _ = env.step(action)
+                    #             done, real_done = done_list
+                    #             eval_rewards[-1] += unclipped_rew
+                    #             obs = new_obs
+                    #         eval_rewards.append(0.0)
+                    #         obs = env.reset()
 
             if t > learning_starts and t % train_freq == 0:
                 # Minimize the error in Bellman's equation on a batch sampled from replay buffer.

@@ -113,7 +113,7 @@ def information_transfer_linear(phiphiT, dqn_feat, old_feat, num_actions, feat_d
         phi_m = None
         xi_m = None
         mi = obses_t_per_a[i].shape[0]
-        M = min([1000, mi])
+        M = min([500, mi])
         if M < feat_dim:
             phiphiT0[i] = 1/0.001 * np.eye(feat_dim)
             continue
@@ -424,7 +424,7 @@ def BayesRegression(phiphiT, phiY, replay_buffer, dqn_feat, target_dqn_feat, num
     # obses_t, actions, rewards, obses_tp1, dones = replay_buffer.n_samples_per_action(n=20000)
     # obses_t_per_a, actions_per_a, rewards_per_a, obses_tp1_per_a, dones_per_a = [], [], [], [], []
 
-    obses_t_per_a, actions_per_a, rewards_per_a, obses_tp1_per_a, dones_per_a = replay_buffer.n_samples_per_action(n=100000)
+    obses_t_per_a, actions_per_a, rewards_per_a, obses_tp1_per_a, dones_per_a = replay_buffer.n_samples_per_action(n=10000)
     # idxes_per_a = []
     # for i in range(num_actions):
     #     obses_t_per_a.append(obses_t[actions == i])
@@ -492,7 +492,7 @@ def BayesRegression(phiphiT, phiY, replay_buffer, dqn_feat, target_dqn_feat, num
 
     for i in range(num_actions):
         mi = obses_t_per_a[i].shape[0]
-        M = min([20000, mi])
+        M = min([10000, mi])
         print("BLR n_samples for action {}: {}".format(i,M))
         if M < feat_dim:
             print("very low samples for action {}".format(i))
