@@ -698,6 +698,7 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
                                        sorted(old_q_func_vars, key=lambda v: v.name)):
                 update_old_expr.append(var_old.assign(var))
             update_old_expr = tf.group(*update_old_expr)
+            update_old = U.function([], [], updates=[update_old_expr])
 
             if not average_DQN:
                 old_target_q_func_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=tf.get_variable_scope().name + "/old_target_q_func")
