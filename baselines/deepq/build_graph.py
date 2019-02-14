@@ -503,11 +503,35 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
         q_t_selected = tf.reduce_sum(q_t * tf.one_hot(act_t_ph, num_actions), 1)
 
         # compute estimate of best possible value starting from state at t + 1
+        average_DQN = True
+        double_q = False
         if double_q:
             print("building double")
             q_tp1_using_online_net, _ = q_func(obs_tp1_input.get(), num_actions, scope="q_func", reuse=True)
             q_tp1_best_using_online_net = tf.argmax(q_tp1_using_online_net, 1)
             q_tp1_best = tf.reduce_sum(q_tp1 * tf.one_hot(q_tp1_best_using_online_net, num_actions), 1)
+        elif average_DQN:
+                print("building average dqn")
+                k = 6 # we use k-1 for the average dqn - first k-1 for agenet and last k-1 for target
+                prev_target_vars = q_func_vars # we use k-1 for the average dqn - first k-1 for agenet and last k-1 for target
+                update_average_target_expr = []
+                q_values_ensemble = []
+                for j in range(k):
+                    q_tp1_net_j, _ = q_func(obs_tp1_input.get(), num_actions, scope="target_{}".format(j))
+                    this_target_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=tf.get_variable_scope().name + "/target_{}".format(j))
+                    q_values_ensemble.append(q_tp1_net_j)
+                    update_target_expr_j = []
+                    for var, var_target in zip(sorted(prev_target_vars, key=lambda v: v.name),
+                                               sorted(this_target_vars, key=lambda v: v.name)):
+                        update_target_expr_j.append(var_target.assign(var))
+                    update_target_expr_j = tf.group(*update_target_expr_j)
+                    update_target_expr_j_func = U.function([], [], updates=[update_target_expr_j])
+                    update_average_target_expr.append(update_target_expr_j_func)
+                    prev_target_vars = this_target_vars
+
+
+                q_tp1_average = tf.reduce_mean(tf.stack(q_values_ensemble[:(k-1)],axis=-1),axis=-1)
+                q_tp1_best = tf.reduce_max(q_tp1_average, 1)
         else:
             print("building not double")
             q_tp1_best = tf.reduce_max(q_tp1, 1)
@@ -575,7 +599,9 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
             feat_target = U.function([obs_tp1_input], phi_target_xtp1)
 
             # old q network evalution
-            ensemble = True
+            ensemble = False
+            old_networks = None
+            old_pseudo_counts_f = None
             outer_product_op = tf.matmul(tf.expand_dims(phi_xt,axis=-1), tf.expand_dims(phi_xt,axis=1))
             if ensemble:
                 old_networks = {i:None for i in range(5)}
@@ -612,10 +638,14 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
 
             q_tp1_old, _ = q_func(obs_tp1_input.get(), num_actions, scope="old_target_q_func")
             if double_q:
-                print("building double")
+                print("building double target for thompson")
                 q_tp1_using_online_net_old, _ = q_func(obs_tp1_input.get(), num_actions, scope="old_q_func", reuse=True)
                 q_tp1_best_using_online_net_old = tf.argmax(q_tp1_using_online_net_old, 1)
                 q_tp1_best_old = tf.reduce_sum(q_tp1_old * tf.one_hot(q_tp1_best_using_online_net_old, num_actions), 1)
+            elif average_DQN:
+                print("building average target for thompson")
+                q_tp1_average_old = tf.reduce_mean(tf.stack(q_values_ensemble[-(k-1):],axis=-1),axis=-1)
+                q_tp1_best_old = tf.reduce_max(q_tp1_average_old, 1)
             else:
                 print("building not double")
                 q_tp1_best_old = tf.reduce_max(q_tp1_old, 1)
@@ -669,16 +699,19 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
                 update_old_expr.append(var_old.assign(var))
             update_old_expr = tf.group(*update_old_expr)
 
-            old_target_q_func_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=tf.get_variable_scope().name + "/old_target_q_func")
-            update_old_target_expr = []
-            for var, var_old in zip(sorted(target_q_func_vars, key=lambda v: v.name),
-                                       sorted(old_target_q_func_vars, key=lambda v: v.name)):
-                update_old_target_expr.append(var_old.assign(var))
-            update_old_target_expr = tf.group(*update_old_target_expr)
+            if not average_DQN:
+                old_target_q_func_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=tf.get_variable_scope().name + "/old_target_q_func")
+                update_old_target_expr = []
+                for var, var_old in zip(sorted(target_q_func_vars, key=lambda v: v.name),
+                                           sorted(old_target_q_func_vars, key=lambda v: v.name)):
+                    update_old_target_expr.append(var_old.assign(var))
+                update_old_target_expr = tf.group(*update_old_target_expr)
 
             feat_old = U.function([obs_t_input], phi_old)
-            update_old = U.function([], [], updates=[update_old_expr])
-            update_old_target = U.function([], [], updates=[update_old_target_expr])
+            if average_DQN:
+                update_old_target = update_average_target_expr
+            else:
+                update_old_target = U.function([], [], updates=[update_old_target_expr])
             blr_additions = {
                 'feat_dim': feat_dim,
                 'feature_extractor': feat,

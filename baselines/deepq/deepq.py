@@ -36,7 +36,7 @@ class BLRParams(object):
             self.update_w = 1 # multiplied by update target frequency
             self.sample_w = 1000
         else:
-            self.sample_w = 10000
+            self.sample_w = 1000
             self.update_w = 1 # multiplied by update target frequency
         self.batch_size = 1000000# batch size to do blr from
         self.gamma = 0.99 #dqn gamma
@@ -305,10 +305,16 @@ def learn(env,
         invgamma_b = [blr_params.a0 for _ in range(num_actions)]
     # Initialize the parameters and copy them to the target network.
     U.initialize()
-    update_target()
+    # update_target()
     if thompson:
         blr_additions['update_old']()
-        blr_additions['update_old_target']()
+
+        if isinstance(blr_additions['update_old_target'], list):
+            for update_net in reversed(blr_additions['update_old_target']):
+                update_net()
+        else:
+            blr_additions['update_old_target']()
+
         if blr_additions['old_networks'] is not None:
             for key in blr_additions['old_networks'].keys():
                 blr_additions['old_networks'][key]["update"]()
@@ -519,7 +525,11 @@ def learn(env,
                     if seed is not None:
                         print('seed is {}'.format(seed))
                     blr_additions['update_old']()
-                    blr_additions['update_old_target']()
+                    if isinstance(blr_additions['update_old_target'], list):
+                        for update_net in reversed(blr_additions['update_old_target']):
+                            update_net()
+                    else:
+                        blr_additions['update_old_target']()
                     if blr_additions['old_networks'] is not None:
                         blr_additions['old_networks'][blr_counter % 5]["update"]()
 
@@ -579,10 +589,10 @@ def learn(env,
                         for i, cov_norm in enumerate(cov_norms):
                             print("cov*sigma norm for action {}: {}, visits: {}".format(i,cov_norm, len(replay_buffer.buffers[i])))
 
-            if t > learning_starts and t % target_network_update_freq == 0:
+            # if t > learning_starts and t % target_network_update_freq == 0:
                 # Update target network periodically.
                 # print(update_target)
-                update_target()
+                # update_target()
 
             mean_100ep_reward = round(np.mean(episode_rewards[-101:-1]), 1)
             mean_10ep_reward = round(np.mean(episode_rewards[-11:-1]), 1)
