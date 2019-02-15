@@ -113,7 +113,7 @@ def information_transfer_linear(phiphiT, dqn_feat, old_feat, num_actions, feat_d
         phi_m = None
         xi_m = None
         mi = obses_t_per_a[i].shape[0]
-        M = min([500, mi])
+        M = min([1000, mi])
         if M < feat_dim:
             phiphiT0[i] = 1/0.001 * np.eye(feat_dim)
             continue
@@ -134,13 +134,15 @@ def information_transfer_linear(phiphiT, dqn_feat, old_feat, num_actions, feat_d
             else:
                 xi_m = np.concatenate([xi_m, xi_t],axis=-1)
         phi_m_inv = np.linalg.pinv(phi_m)
-        xi_m_inv = np.linalg.pinv(xi_m)
         xi_m_phi_m_inv = tf.matmul(xi_m, phi_m_inv).eval()
-        phi_m_xi_m_inv = tf.matmul(phi_m, xi_m_inv).eval()
         phiphiT0[i] = tf.matmul(tf.matmul(xi_m_phi_m_inv, phiphiT[i]).eval(), xi_m_phi_m_inv.T).eval()# + 1/0.001 * np.eye(feat_dim)
-        phiphiT_inv = np.linalg.pinv(phiphiT[i])
         # phiphiT0[i] = (xi_m @ phi_m_inv) @ phiphiT[i] @ (phi_m_inv.T @ xi_m.T)# + 1/0.001 * np.eye(feat_dim)
-        mu0[i] = tf.matmul(tf.matmul(phiphiT_inv, phiY[i][..., None]).eval().T, phi_m_xi_m_inv).eval()
+
+        # TODO: currently using last layer weights, if you want to use linear prior for expectation remove comment
+        # phiphiT_inv = np.linalg.pinv(phiphiT[i])
+        # xi_m_inv = np.linalg.pinv(xi_m)
+        # phi_m_xi_m_inv = tf.matmul(phi_m, xi_m_inv).eval()
+        # mu0[i] = tf.matmul(tf.matmul(phiphiT_inv, phiY[i][..., None]).eval().T, phi_m_xi_m_inv).eval()
     d2 = datetime.now()
     print("total time for linear prior")
     print(d2.minute - d1.minute + (d2.hour-d1.hour) * 60)
@@ -424,7 +426,7 @@ def BayesRegression(phiphiT, phiY, replay_buffer, dqn_feat, target_dqn_feat, num
     # obses_t, actions, rewards, obses_tp1, dones = replay_buffer.n_samples_per_action(n=20000)
     # obses_t_per_a, actions_per_a, rewards_per_a, obses_tp1_per_a, dones_per_a = [], [], [], [], []
 
-    obses_t_per_a, actions_per_a, rewards_per_a, obses_tp1_per_a, dones_per_a = replay_buffer.n_samples_per_action(n=10000)
+    obses_t_per_a, actions_per_a, rewards_per_a, obses_tp1_per_a, dones_per_a = replay_buffer.n_samples_per_action(n=20000)
     # idxes_per_a = []
     # for i in range(num_actions):
     #     obses_t_per_a.append(obses_t[actions == i])
@@ -447,7 +449,7 @@ def BayesRegression(phiphiT, phiY, replay_buffer, dqn_feat, target_dqn_feat, num
             phiphiT[i] = (1 / blr_param.sigma) * np.eye(feat_dim)
     elif prior == "linear":
         print("linear")
-        phiphiT0, last_layer_weights = information_transfer_linear(phiphiT, dqn_feat, old_feat, num_actions, feat_dim,
+        phiphiT0, _ = information_transfer_linear(phiphiT, dqn_feat, old_feat, num_actions, feat_dim,
                                                                    actions_buffers, phiY)
         phiphiT *= (1 - blr_param.alpha) * 0
         phiY *= (1 - blr_param.alpha) * 0
@@ -492,7 +494,7 @@ def BayesRegression(phiphiT, phiY, replay_buffer, dqn_feat, target_dqn_feat, num
 
     for i in range(num_actions):
         mi = obses_t_per_a[i].shape[0]
-        M = min([10000, mi])
+        M = min([20000, mi])
         print("BLR n_samples for action {}: {}".format(i,M))
         if M < feat_dim:
             print("very low samples for action {}".format(i))
