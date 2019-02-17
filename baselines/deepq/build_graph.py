@@ -95,8 +95,11 @@ The functions in this file can are used to create the following functions:
 """
 import tensorflow as tf
 import baselines.common.tf_util as U
-
-
+# from tensorflow_probability.math import pinv as tfpinv
+# from tensorflow_probability import math
+# tfpinv = math.pinv
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 def scope_vars(scope, trainable_only=False):
     """
     Get variables inside a scope
@@ -512,7 +515,7 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
             q_tp1_best = tf.reduce_sum(q_tp1 * tf.one_hot(q_tp1_best_using_online_net, num_actions), 1)
         elif average_DQN:
                 print("building average dqn")
-                k = 6 # we use k-1 for the average dqn - first k-1 for agenet and last k-1 for target
+                k = 11 # we use k-1 for the average dqn - first k-1 for agenet and last k-1 for target
                 prev_target_vars = q_func_vars # we use k-1 for the average dqn - first k-1 for agenet and last k-1 for target
                 update_average_target_expr = []
                 q_values_ensemble = []

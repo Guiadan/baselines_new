@@ -114,6 +114,7 @@ def information_transfer_linear(phiphiT, dqn_feat, old_feat, num_actions, feat_d
         xi_m = None
         mi = obses_t_per_a[i].shape[0]
         M = min([1000, mi])
+        print("linear prior for action {}, samples: {}".format(i,M))
         if M < feat_dim:
             phiphiT0[i] = 1/0.001 * np.eye(feat_dim)
             continue
@@ -134,9 +135,9 @@ def information_transfer_linear(phiphiT, dqn_feat, old_feat, num_actions, feat_d
             else:
                 xi_m = np.concatenate([xi_m, xi_t],axis=-1)
         phi_m_inv = np.linalg.pinv(phi_m)
-        xi_m_phi_m_inv = tf.matmul(xi_m, phi_m_inv).eval()
-        phiphiT0[i] = tf.matmul(tf.matmul(xi_m_phi_m_inv, phiphiT[i]).eval(), xi_m_phi_m_inv.T).eval()# + 1/0.001 * np.eye(feat_dim)
-        # phiphiT0[i] = (xi_m @ phi_m_inv) @ phiphiT[i] @ (phi_m_inv.T @ xi_m.T)# + 1/0.001 * np.eye(feat_dim)
+        # xi_m_phi_m_inv = tf.matmul(xi_m, phi_m_inv).eval()
+        # phiphiT0[i] = tf.matmul(tf.matmul(xi_m_phi_m_inv, phiphiT[i]).eval(), xi_m_phi_m_inv.T).eval()# + 1/0.001 * np.eye(feat_dim)
+        phiphiT0[i] = xi_m @ phi_m_inv @ phiphiT[i] @ phi_m_inv.T @ xi_m.T# + 1/0.001 * np.eye(feat_dim)
 
         # TODO: currently using last layer weights, if you want to use linear prior for expectation remove comment
         # phiphiT_inv = np.linalg.pinv(phiphiT[i])
