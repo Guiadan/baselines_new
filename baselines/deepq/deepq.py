@@ -349,7 +349,7 @@ def learn(env,
         actions_hist_total = [0 for _ in range(num_actions)]
         last_layer_weights_decaying_average = None
         blr_counter = 0
-        action_buffers_size = 1024
+        action_buffers_size = 512
         action_buffers = [ReplayBuffer(action_buffers_size) for _ in range(num_actions)]
         eval_flag = False
         eval_counter = 0
@@ -444,8 +444,8 @@ def learn(env,
             # episode_Q_estimates[-1] += estimate
             unclipped_episode_rewards[-1] += unclipped_rew
 
-            # if t % 250000 == 0 and t > 0:
-            #     eval_flag = True
+            if t % 250000 == 0 and t > 0:
+                eval_flag = True
 
             if done:
                 obs = env.reset()
@@ -457,25 +457,31 @@ def learn(env,
                     # for i in range(old_networks_num):
                     #     episode_pseudo_count[i].append(0.0)
                     # every time full episode ends run eval episode
-                    # if eval_flag:
-                    #     real_done = False
-                    #     eval_rewards = [0.0]
-                    #     for te in range(125000):
-                    #         action, _ = blr_additions['eval_act'](np.array(obs)[None])
-                    #         new_obs, unclipped_rew, done_list, _ = env.step(action)
-                    #         done, real_done = done_list
-                    #         eval_rewards[-1] += unclipped_rew
-                    #         obs = new_obs
-                    #         if done:
-                    #             obs = env.reset()
-                    #         if real_done:
-                    #             eval_rewards.append(0.0)
-                    #     obs = env.reset()
-                    #     eval_rewards.pop()
-                    #     mean_reward_eval = round(np.mean(eval_rewards), 1)
-                    #     logger.record_tabular("mean eval episode reward", mean_reward_eval)
-                    #     logger.dump_tabular()
-                    #     eval_flag = False
+                    if eval_flag:
+                        eval_rewards = [0.0]
+                        te = 0
+                        print("running evaluation")
+                        while te < 125000:
+                        # for te in range(125000):
+                            real_done = False
+                            print(te)
+                            while not real_done:
+                                action, _ = blr_additions['eval_act'](np.array(obs)[None])
+                                new_obs, unclipped_rew, done_list, _ = env.step(action)
+                                done, real_done = done_list
+                                eval_rewards[-1] += unclipped_rew
+                                obs = new_obs
+                                te += 1
+                                if done:
+                                    obs = env.reset()
+                                if real_done:
+                                    eval_rewards.append(0.0)
+                        obs = env.reset()
+                        eval_rewards.pop()
+                        mean_reward_eval = round(np.mean(eval_rewards), 2)
+                        logger.record_tabular("mean eval episode reward", mean_reward_eval)
+                        logger.dump_tabular()
+                        eval_flag = False
                     # eval_counter += 1
                     # if eval_counter % 10 == 0:
                     #     if t > learning_starts:

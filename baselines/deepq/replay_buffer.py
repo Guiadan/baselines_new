@@ -294,7 +294,7 @@ class ReplayBufferPerActionNew(object):
         # self._storage = [ [] for _ in range(num_actions)]
         # self._maxsize = size
         # self._next_idx = [0 for _ in range(num_actions)]
-        self.buffers = [ReplayBuffer(size) for _ in range(num_actions)]
+        self.buffers = [ReplayBuffer(int(size/num_actions)) for _ in range(num_actions)]
         self.num_actions = num_actions
 
     def __len__(self):
