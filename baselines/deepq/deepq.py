@@ -23,7 +23,7 @@ from baselines.deepq.thompson_utils import BayesRegression
 #additions
 from scipy.stats import invgamma
 from tqdm import tqdm
-debug_flag = True
+debug_flag = False
 structred_learning = False
 first_time = True
 
