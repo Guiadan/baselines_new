@@ -322,7 +322,7 @@ def learn(env,
     episode_rewards = [0.0]
     # episode_Q_estimates = [0.0]
     unclipped_episode_rewards = [0.0]
-    eval_rewards = [0.0]
+    # eval_rewards = [0.0]
 
 
     old_networks_num = 5
@@ -458,9 +458,9 @@ def learn(env,
                     #     episode_pseudo_count[i].append(0.0)
                     # every time full episode ends run eval episode
                     if eval_flag:
-                        eval_rewards = [0.0]
                         te = 0
                         print("running evaluation")
+                        eval_rewards = [0.0]
                         while te < 125000:
                         # for te in range(125000):
                             real_done = False

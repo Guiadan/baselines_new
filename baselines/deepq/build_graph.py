@@ -515,7 +515,7 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, grad_norm_clipping=
             q_tp1_best = tf.reduce_sum(q_tp1 * tf.one_hot(q_tp1_best_using_online_net, num_actions), 1)
         elif average_DQN:
                 print("building average dqn")
-                k = 11 # we use k-1 for the average dqn - first k-1 for agenet and last k-1 for target
+                k = 2 # we use k-1 for the average dqn - first k-1 for agenet and last k-1 for target
                 prev_target_vars = q_func_vars # we use k-1 for the average dqn - first k-1 for agenet and last k-1 for target
                 update_average_target_expr = []
                 q_values_ensemble = []

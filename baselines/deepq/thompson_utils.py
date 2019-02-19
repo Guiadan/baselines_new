@@ -487,7 +487,7 @@ def BayesRegression(phiphiT, phiY, replay_buffer, dqn_feat, target_dqn_feat, num
         phiY *= (1 - blr_param.alpha) * 0
 
     YY = np.zeros(num_actions)
-    a = np.ones(num_actions) * blr_param.a0
+    # a = np.ones(num_actions) * blr_param.a0
     b = np.ones(num_actions) * blr_param.b0
     # obses_t, actions, rewards, obses_tp1, dones = replay_buffer.get_samples(idxes[:n_samples])
     n = np.zeros(num_actions)

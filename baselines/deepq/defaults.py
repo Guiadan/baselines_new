@@ -9,7 +9,7 @@ def atari():
             exploration_final_eps=0.01,
             train_freq=4,
             learning_starts=5000,#10000
-            target_network_update_freq=1000,
+            target_network_update_freq=10000,
             gamma=0.99,
             prioritized_replay=False,
             prioritized_replay_alpha=0.6,
