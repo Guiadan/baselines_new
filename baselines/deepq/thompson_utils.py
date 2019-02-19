@@ -414,7 +414,7 @@ def BayesRegressionOld(phiphiT, phiY, replay_buffer, dqn_feat, target_dqn_feat, 
 
 def BayesRegression(phiphiT, phiY, replay_buffer, dqn_feat, target_dqn_feat, num_actions, blr_param,
                     w_mu, w_cov, last_layer_weights, prior="sdp", blr_ops=None, sdp_ops=None, old_networks=None,
-                    blr_counter=None, old_feat=None):
+                    blr_counter=None, old_feat=None,a=None):
 
     # dqn_ and target_dqn_ are feature extractors for the dqn and target dqn respectivley
     # in the neural linear settings target are the old features and dqn are the new features

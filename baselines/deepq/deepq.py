@@ -23,7 +23,7 @@ from baselines.deepq.thompson_utils import BayesRegression
 #additions
 from scipy.stats import invgamma
 from tqdm import tqdm
-debug_flag = False
+debug_flag = True
 structred_learning = False
 first_time = True
 
@@ -526,7 +526,7 @@ def learn(env,
                                                                  prior=prior, blr_ops=blr_additions['blr_ops'],
                                                                  sdp_ops=blr_additions['sdp_ops'],
                                                                  old_networks=blr_additions['old_networks'],
-                                                                 blr_counter=blr_counter, old_feat=blr_additions['old_feature_extractor'])
+                                                                 blr_counter=blr_counter, old_feat=blr_additions['old_feature_extractor'], a=invgamma_a)
                     blr_counter += 1
                     if seed is not None:
                         print('seed is {}'.format(seed))
