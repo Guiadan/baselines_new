@@ -28,6 +28,8 @@ def information_transfer_new(phiphiT, dqn_feat, target_dqn_feat, replay_buffer, 
     obses_t, actions, rewards, obses_tp1, dones = replay_buffer.get_samples(idxes[:batch_size])
     # obses_t, actions, rewards, obses_tp1, dones = replay_buffer.sample(batch_size)
     mini_batch_size = 32*num_actions
+    outer_k_matrix = [None for _ in range(num_actions)]
+    pseudo_count_k_matrix = [None for _ in range(num_actions)]
     for j in tqdm(range((batch_size // mini_batch_size)+1)):
         # obs_t, action, reward, obs_tp1, done = obses_t[j], actions[j], rewards[j], obses_tp1[j], dones[j]
         start_idx = j*mini_batch_size
@@ -39,6 +41,12 @@ def information_transfer_new(phiphiT, dqn_feat, target_dqn_feat, replay_buffer, 
                 continue
             nk = obs_t[action == k].shape[0]
             pseudo_count_k, outer_k = sdp_ops(obs_t[action == k], obs_t[action == k], np.tile(phiphiT_inv[k],(nk,1,1)))
+            if outer_k_matrix[k] is None:
+                outer_k_matrix[k] = outer_k.transpose([0,2,1]).reshape(nk,feat_dim*feat_dim)
+                pseudo_count_k_matrix[k] = pseudo_count_k
+            else:
+                outer_k_matrix[k] = np.concatenate([outer_k_matrix[k], outer_k.transpose([0,2,1]).reshape(nk,feat_dim*feat_dim)], axis=0)
+                pseudo_count_k_matrix[k] = np.concatenate([pseudo_count_k_matrix[k], pseudo_count_k], axis=0)
             outer_k = [np.array(p) for p in outer_k.tolist()]
             pseudo_count_k = pseudo_count_k.tolist()
             d[k].extend(pseudo_count_k)
@@ -64,6 +72,8 @@ def information_transfer_new(phiphiT, dqn_feat, target_dqn_feat, replay_buffer, 
                 cov.append(prior)
                 information_transfer_new.failure_num += 1
             else:
+                res = np.linalg.lstsq(outer_k_matrix[a], pseudo_count_k_matrix[a])
+                Xnp = res[0].reshape((feat_dim,feat_dim))
                 precisions_return.append(np.linalg.inv(X.value + prior))
                 cov.append(X.value + prior)
                 information_transfer_new.success_num += 1
@@ -89,12 +99,19 @@ information_transfer_new.failure_num = 0
 information_transfer_new.calls = 0
 information_transfer_new.last_success = 0
 
-def information_transfer_linear(phiphiT, dqn_feat, old_feat, num_actions, feat_dim,actions_buffers, phiY):
+def information_transfer_linear(phiphiT, dqn_feat, old_feat, num_actions, feat_dim,actions_buffers, phiY, sdp_ops):
     # n_samples = min([300000, len(replay_buffer)])
     # idxes = [i for i in range(n_samples)]
     # obses_t, actions, rewards, obses_tp1, dones = replay_buffer.get_samples(idxes)
     # obses_t_per_a, actions_per_a, rewards_per_a, obses_tp1_per_a, dones_per_a = [], [], [], [], []
     # idxes_per_a = []
+
+    # for new liear approach
+    phiphiT_inv = np.zeros_like(phiphiT)
+    print("phiphiT inv")
+    for i in range(num_actions):
+        phiphiT_inv[i] = np.linalg.pinv(phiphiT[i])
+
     obses_t_per_a, actions_per_a, rewards_per_a, obses_tp1_per_a, dones_per_a = actions_buffers
     d1 = datetime.now()
     # for i in range(num_actions):
@@ -109,6 +126,10 @@ def information_transfer_linear(phiphiT, dqn_feat, old_feat, num_actions, feat_d
 
     phiphiT0 = np.zeros_like(phiphiT)
     mu0 = np.zeros_like(phiY)
+
+    phiphiT0_inv_alternative = np.zeros_like(phiphiT)
+    outer_k_matrix = [None for _ in range(num_actions)]
+    pseudo_count_k_matrix = [None for _ in range(num_actions)]
     for i in range(num_actions):
         phi_m = None
         xi_m = None
@@ -126,6 +147,17 @@ def information_transfer_linear(phiphiT, dqn_feat, old_feat, num_actions, feat_d
                 continue
             phi_t = old_feat(obses_t_per_a[i][start_idx:end_idx][None]).T
             xi_t = dqn_feat(obses_t_per_a[i][start_idx:end_idx][None]).T
+
+            # additions for new linear method
+            ni = xi_t.shape[0]
+            pseudo_count_k, outer_k = sdp_ops(obses_t_per_a[i][start_idx:end_idx][None], obses_t_per_a[i][start_idx:end_idx][None], np.tile(phiphiT_inv[i],(ni,1,1)))
+            if outer_k_matrix[i] is None:
+                outer_k_matrix[i] = outer_k.transpose([0,2,1]).reshape(ni,feat_dim*feat_dim)
+                pseudo_count_k_matrix[i] = pseudo_count_k
+            else:
+                outer_k_matrix[i] = np.concatenate([outer_k_matrix[i], outer_k.transpose([0,2,1]).reshape(ni,feat_dim*feat_dim)], axis=0)
+                pseudo_count_k_matrix[i] = np.concatenate([pseudo_count_k_matrix[i], pseudo_count_k], axis=0)
+
             if phi_m is None:
                 phi_m = phi_t
             else:
@@ -446,12 +478,15 @@ def BayesRegression(phiphiT, phiY, replay_buffer, dqn_feat, target_dqn_feat, num
         print("no prior")
         phiY *= (1 - blr_param.alpha) * 0
         phiphiT *= (1 - blr_param.alpha) * 0
+        a = np.ones(num_actions) * blr_param.a0
+        phiphiT0 = np.zeros_like(phiphiT)
         for i in range(num_actions):
-            phiphiT[i] = (1 / blr_param.sigma) * np.eye(feat_dim)
+            phiphiT0[i] = (1 / blr_param.sigma) * np.eye(feat_dim)
+        last_layer_weights = np.zeros_like(last_layer_weights)
     elif prior == "linear":
         print("linear")
         phiphiT0, _ = information_transfer_linear(phiphiT, dqn_feat, old_feat, num_actions, feat_dim,
-                                                                   actions_buffers, phiY)
+                                                                   actions_buffers, phiY, sdp_ops)
         phiphiT *= (1 - blr_param.alpha) * 0
         phiY *= (1 - blr_param.alpha) * 0
     elif prior == "decay":
@@ -529,6 +564,9 @@ def BayesRegression(phiphiT, phiY, replay_buffer, dqn_feat, target_dqn_feat, num
         b_upd += 0.5 * np.dot(last_layer_weights[:, k].T, np.dot(phiphiT0[k], last_layer_weights[:, k]))
         b_upd -= 0.5 * np.dot(mu.T, np.dot(precision, mu))
         b[k] += b_upd
+
+    if prior == "no prior":
+        phiphiT += phiphiT0
 
     print(n, np.sum(n))
     print(action_rewards)

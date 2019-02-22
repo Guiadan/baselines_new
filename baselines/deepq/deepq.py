@@ -553,6 +553,8 @@ def learn(env,
                     # else:
                     #     adaptive_sigma = False
                     cov_norms = []
+                    cov_norms_no_sigma = []
+                    sampled_sigmas = []
                     for i in range(num_actions):
                         if prior == 'no prior' or last_layer_weights is None:
                             cov = np.linalg.inv(phiphiT[i])
@@ -590,6 +592,8 @@ def learn(env,
                                 w_sample[i, j] = mu
 
                         cov_norms.append(np.linalg.norm(sigma*cov))
+                        cov_norms_no_sigma.append(np.linalg.norm(cov))
+                        sampled_sigmas.append(sigma)
 
                     if t % 7 == 0:
                         for i, cov_norm in enumerate(cov_norms):
