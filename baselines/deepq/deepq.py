@@ -389,7 +389,10 @@ def learn(env,
             env_action = action
             reset = False
             new_obs, unclipped_rew, done_list, _ = env.step(env_action)
-            done, real_done = done_list
+            if isinstance(done_list, list):
+                done, real_done = done_list
+            else:
+                done, real_done = done_list, done_list
             rew = np.sign(unclipped_rew)
 
             # Store transition in the replay buffer.
@@ -468,7 +471,10 @@ def learn(env,
                             while not real_done:
                                 action, _ = blr_additions['eval_act'](np.array(obs)[None])
                                 new_obs, unclipped_rew, done_list, _ = env.step(action)
-                                done, real_done = done_list
+                                if isinstance(done_list,list):
+                                    done, real_done = done_list
+                                else:
+                                    done, real_done = done_list, done_list
                                 eval_rewards[-1] += unclipped_rew
                                 obs = new_obs
                                 te += 1

@@ -195,7 +195,7 @@ def main(args):
     if MPI is None or MPI.COMM_WORLD.Get_rank() == 0:
         rank = 0
         logger.configure(dir='./baselines/deepq/exp/{}/{}/seed_{}'.format(
-                         args.env, args.exp_name, args.seed), format_strs=["tensorboard","csv"]) #"stdout"
+                         args.env, args.exp_name, args.seed), format_strs=["tensorboard","csv","stdout"]) #"stdout"
         # except:
         #     logger.configure()
     else:
